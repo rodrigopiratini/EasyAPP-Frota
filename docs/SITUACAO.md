@@ -30,6 +30,10 @@
   relatório" encerra e abre o PDF. O motorista vê o relatório das viagens fechadas (sem o lucro da empresa) em Lançamentos.
 - Custos lançados numa viagem entram no resultado na data de chegada da viagem (`dataCusto`), junto com o frete. "Cheguei" não aceita data futura.
 - Identidade: marca da família EasyAPP (três barras; cores em `segmento.css`: --marca-fundo/-a/-b).
+- **Integridade (03/11):** não dá para excluir caminhão, motorista ou cliente com histórico (sugere desativar); lançamento de viagem
+  fechada não muda (reabra a viagem); trocar caminhão/motorista da viagem leva os lançamentos junto; "Resultado por veículo" tem a linha
+  "Sem caminhão" e sempre soma o total; "a receber" desconta os recebimentos lançados. Verificação das contas: soma por caminhão = total,
+  extrato = custos, acerto por viagem = saldo, sem referência quebrada (rodada na demonstração e na TR EDU).
 - **Excluir viagem** apaga junto as despesas, abastecimentos e recebimentos dela.
 - Km com ponto de milhar (campo `inteiro` do núcleo). Painel: cartões e "Para onde vai o dinheiro" abrem detalhamento/extrato.
 - Os custos que estavam em campos da viagem (dados importados do Financial) viraram despesas ligadas a cada viagem.

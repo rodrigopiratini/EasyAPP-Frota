@@ -90,8 +90,10 @@ export function resultado(s, de, ate) {
   const abast = s.abastecimentos.filter((a) => noPeriodo(dataCusto(s, a, mv), de, ate));
   const desp = s.despesas.filter((d) => noPeriodo(dataCusto(s, d, mv), de, ate));
   const manut = s.manutencoes.filter((m) => noPeriodo(m.data, de, ate));
+  // vid: undefined = tudo; null = o que não é de nenhum caminhão cadastrado (despesas gerais, caminhão removido)
+  const ids = new Set(s.veiculos.map((v) => v.id));
   const conta = (vid) => {
-    const f = (arr) => (vid === undefined ? arr : arr.filter((x) => x.veiculoId === vid));
+    const f = (arr) => (vid === undefined ? arr : vid === null ? arr.filter((x) => !ids.has(x.veiculoId)) : arr.filter((x) => x.veiculoId === vid));
     const vs = f(viagens);
     const r = {
       viagens: vs.length, faturamento: sum(vs, (v) => +v.valorFrete), km: sum(vs, kmViagem), litros: sum(f(abast), (a) => +a.litros || 0) + sum(vs, (v) => +v.litros || 0),
@@ -105,7 +107,11 @@ export function resultado(s, de, ate) {
     r.receitaKm = r.km ? r.faturamento / r.km : 0;
     return r;
   };
-  return { ...conta(), porVeiculo: s.veiculos.map((v) => ({ v, ...conta(v.id) })).filter((x) => x.v.ativo !== false || x.viagens || x.custos) };
+  // as linhas por caminhão sempre somam o total: o que não é de caminhão nenhum vira a linha "Sem caminhão"
+  const sem = conta(null);
+  const porVeiculo = s.veiculos.map((v) => ({ v, ...conta(v.id) })).filter((x) => x.v.ativo !== false || x.viagens || x.custos);
+  if (sem.viagens || sem.custos) porVeiculo.push({ v: { id: '', placa: 'Sem caminhão', apelido: 'despesas gerais', geral: true }, ...sem });
+  return { ...conta(), porVeiculo };
 }
 
 export const limitesMes = (k) => { const [y, m] = k.split('-').map(Number); const fim = new Date(y, m, 0).getDate(); return [`${k}-01`, `${k}-${String(fim).padStart(2, '0')}`]; };
@@ -114,7 +120,17 @@ export function historico(s, n = 6, fim = monthKey(today())) {
   return Array.from({ length: n }, (_, i) => mesMais(fim, i - n + 1)).map((k) => ({ mes: k, ...resultado(s, ...limitesMes(k)) }));
 }
 
-export const aReceber = (s) => s.viagens.filter((v) => v.status === 'concluida' && !v.recebido && +v.valorFrete > 0);
+// Fretes a receber: concluídos, não marcados como recebidos e com parte ainda não lançada nos recebimentos
+export const aReceber = (s) => s.viagens.filter((v) => v.status === 'concluida' && !v.recebido && +v.valorFrete > 0 && fechamento(s, v).faltaReceber > 0.004);
+export const faltaReceber = (s, v) => (v.recebido ? 0 : fechamento(s, v).faltaReceber);
+// Onde um caminhão / motorista / cliente é usado (para não excluir quem tem histórico)
+export function usos(s, campo, id) {
+  const cols = ['viagens', 'abastecimentos', 'despesas', 'manutencoes', 'recebimentos'];
+  const n = Object.fromEntries(cols.map((c) => [c, (s[c] || []).filter((x) => x[campo] === id).length]));
+  if (campo === 'veiculoId') n.motoristas = s.motoristas.filter((m) => m.veiculoId === id).length;
+  n.total = Object.values(n).reduce((a, b) => a + b, 0);
+  return n;
+}
 export const aConferir = (s) => [...s.viagens.filter((v) => v.status === 'concluida'), ...s.abastecimentos, ...s.despesas, ...(s.recebimentos || [])].filter((x) => !x.conferido && x.motoristaId);
 
 // ---------- Recebimento do frete e fechamento da viagem ----------

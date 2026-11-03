@@ -135,7 +135,9 @@ const novaViagem = (base = {}) => {
 const editarViagem = (id) => {
   const doc = S().viagens.find((v) => v.id === id);
   editar({ titulo: `Viagem #${doc?.numero || ''}`, colecao: 'viagens', campos: CAMPOS_VIAGEM, doc, apagar: false,
-    antesDeSalvar: (v) => { const e = checarViagem(v); if (e) return e; if (v.recebido && !v.recebidoEm) v.recebidoEm = today(); if (!v.recebido) v.recebidoEm = null; } });
+    antesDeSalvar: (v) => { const e = checarViagem(v); if (e) return e; if (v.recebido && !v.recebidoEm) v.recebidoEm = today(); if (!v.recebido) v.recebidoEm = null; },
+    // trocou o caminhão ou o motorista: os lançamentos da viagem vão junto (senão o resultado por caminhão fica errado)
+    onSalvo: (v) => { if (v && (v.veiculoId !== doc.veiculoId || v.motoristaId !== doc.motoristaId)) A.store.commit((s) => { for (const { col, x } of D.lancamentosDa(s, v.id)) Object.assign(s[col].find((y) => y.id === x.id), { veiculoId: v.veiculoId, motoristaId: v.motoristaId }); }); } });
   ligarVinculo('fed');
 };
 
@@ -174,8 +176,8 @@ function lancarNaViagem(v, tipo) {
     antesDeSalvar: (d) => { Object.assign(d, daViagem(v), { categoria: tipo, conferido: true }); } });
 }
 function receitaForm(v, doc = null) {
-  editar({ titulo: doc ? 'Recebimento' : `Receita · viagem #${v.numero || ''}`, colecao: 'recebimentos', campos: CAMPOS_RECEB, prefixo: 'rc', doc, largo: false,
-    antesDeSalvar: (r, antes) => { if (!antes) Object.assign(r, daViagem(v), { conferido: true }); } });
+  editar({ titulo: doc ? 'Recebimento' : `Receita · viagem #${v.numero || ''}`, colecao: 'recebimentos', campos: CAMPOS_RECEB, prefixo: 'rc', doc, largo: false, antesDeApagar: travaFechada,
+    antesDeSalvar: (r, antes) => { if (!antes) Object.assign(r, daViagem(v), { conferido: true }); return travaFechada(r) || undefined; } });
   const f = document.getElementById('fed');
   f?.addEventListener('change', (e) => { if (e.target.name === 'forma') f.elements.com.value = D.comPadrao(e.target.value); });
 }
@@ -185,6 +187,7 @@ function editarVeiculo(doc) {
   const comVenc = doc ? { ...doc, motoristaId: S().motoristas.find((m) => m.veiculoId === doc.id)?.id || '', ...Object.fromEntries(D.VENCIMENTOS.map(([k]) => ['v_' + k, doc.venc?.[k] || ''])) } : null;
   let motoristaId = '';
   editar({ titulo: 'Veículo', colecao: 'veiculos', campos: [...CAMPOS_VEICULO, ...CAMPOS_VENC], doc: comVenc, prefixo: 've',
+    antesDeApagar: travaUso('veiculoId', 'Este caminhão', 'Para tirar da frota sem perder nada, desmarque "Em operação" e salve.'),
     antesDeSalvar: (v) => { motoristaId = v.motoristaId; delete v.motoristaId; v.venc = {}; for (const [k] of D.VENCIMENTOS) { if (v['v_' + k]) v.venc[k] = v['v_' + k]; delete v['v_' + k]; } },
     onSalvo: (v) => {
       if (!v) return;
@@ -195,6 +198,16 @@ function editarVeiculo(doc) {
 }
 
 // ---------- App ----------
+// ---------- Integridade: quem tem histórico não some; viagem fechada não muda por baixo ----------
+const travaUso = (campo, nome, comoDesativar) => (doc) => {
+  const u = D.usos(S(), campo, doc.id);
+  if (!u.total) return null;
+  const partes = [u.viagens && plural(u.viagens, 'viagem', 'viagens'), (u.abastecimentos + u.despesas + u.recebimentos) && plural(u.abastecimentos + u.despesas + u.recebimentos, 'lançamento'),
+    u.manutencoes && plural(u.manutencoes, 'manutenção', 'manutenções'), u.motoristas && plural(u.motoristas, 'motorista ligado', 'motoristas ligados')].filter(Boolean).join(', ');
+  return `${nome} tem histórico (${partes}). Excluir apagaria a referência e bagunçaria os resultados. ${comoDesativar}`;
+};
+const viagemFechadaDe = (x) => x?.viagemId && S().viagens.find((v) => v.id === x.viagemId && v.fechadoEm);
+const travaFechada = (x) => { const v = viagemFechadaDe(x); return v ? `A viagem #${v.numero || ''} ${esc(v.destino)} já foi fechada. Reabra a viagem (na página dela) para mudar os lançamentos.` : null; };
 const quemDeveTxt = (f) => (f.saldo > 0.004 ? `Motorista devolve ${money(f.saldo)}` : f.saldo < -0.004 ? `Empresa paga ao motorista ${money(-f.saldo)}` : 'Acerto zerado');
 const numerar = (id) => A.store.commit((s) => { const x = s.viagens.find((y) => y.id === id); if (x && !x.numero) x.numero = D.proximoNumero(s); });
 let ACOES;
@@ -267,7 +280,7 @@ const A = criarApp({
     detalhe: (el) => abrirDetalhe(el.dataset.k, el.dataset.p, el.dataset.cat),
     receber: (el) => { A.store.commit((s) => Object.assign(s.viagens.find((v) => v.id === el.dataset.id), { recebido: true, recebidoEm: today() })); toast('Frete marcado como recebido'); },
     novoAbast: (el) => { editar({ titulo: 'Abastecimento', colecao: 'abastecimentos', campos: CAMPOS_ABAST, prefixo: 'ab', inicial: el.dataset.v ? { veiculoId: el.dataset.v } : null, antesDeSalvar: (a, antes) => { completarTres(a); if (!antes) a.conferido = true; } }); ligarTres('fed'); ligarVinculo('fed'); },
-    editarAbast: (el) => { editar({ titulo: 'Abastecimento', colecao: 'abastecimentos', campos: CAMPOS_ABAST, doc: S().abastecimentos.find((x) => x.id === el.dataset.id), antesDeSalvar: (a) => { completarTres(a); } }); ligarTres('fed'); ligarVinculo('fed'); },
+    editarAbast: (el) => { const doc = S().abastecimentos.find((x) => x.id === el.dataset.id); editar({ titulo: 'Abastecimento', colecao: 'abastecimentos', campos: CAMPOS_ABAST, doc, antesDeSalvar: (a) => travaFechada(a) || (completarTres(a), undefined), antesDeApagar: travaFechada }); ligarTres('fed'); ligarVinculo('fed'); },
     novaDespesa: (el) => {
       const tipos = [['combustivel', 'Combustível', 'fuel'], ...D.CATEGORIAS.map(([k, n]) => [k, n, 'receipt'])];
       modal({ title: 'Nova despesa', body: `<div class="tiny muted mb">Despesa de uma viagem? Lance pela página da viagem (Viagens › abrir).</div><div class="grid g2" style="gap:10px">${tipos.map(([k, n, ic]) => `<button class="acao-grande" data-act="tipo" data-k="${k}"><span class="ic">${icon(ic)}</span><span class="grow"><div class="t">${n}</div></span></button>`).join('')}</div>`,
@@ -277,15 +290,16 @@ const A = criarApp({
           editar({ titulo: D.nomeCategoria(b.dataset.k), colecao: 'despesas', campos: CAMPOS_DESPESA.filter((c) => c.k !== 'categoria'), prefixo: 'dp', antesDeSalvar: (d, antes) => { d.categoria = b.dataset.k; if (!antes) d.conferido = true; } }); ligarVinculo('fed');
         } } });
     },
-    editarDespesa: (el) => editar({ titulo: 'Despesa', colecao: 'despesas', campos: CAMPOS_DESPESA, doc: S().despesas.find((x) => x.id === el.dataset.id) }),
+    editarDespesa: (el) => editar({ titulo: 'Despesa', colecao: 'despesas', campos: CAMPOS_DESPESA, doc: S().despesas.find((x) => x.id === el.dataset.id), antesDeSalvar: travaFechada, antesDeApagar: travaFechada }),
     novaManut: (el) => editar({ titulo: 'Manutenção', colecao: 'manutencoes', campos: CAMPOS_MANUT, prefixo: 'mn', inicial: el.dataset.v ? { veiculoId: el.dataset.v, km: D.kmAtual(S(), el.dataset.v) } : null }),
     editarManut: (el) => editar({ titulo: 'Manutenção', colecao: 'manutencoes', campos: CAMPOS_MANUT, doc: S().manutencoes.find((x) => x.id === el.dataset.id) }),
     novoVeiculo: () => editarVeiculo(null),
     editarVeiculo: (el) => editarVeiculo(S().veiculos.find((v) => v.id === el.dataset.id)),
     novoMotorista: () => editar({ titulo: 'Motorista', colecao: 'motoristas', campos: CAMPOS_MOTORISTA, prefixo: 'mo', onSalvo: (m, novo) => { if (novo) toast('Gere o acesso ao app em Configurações › Acesso dos motoristas'); } }),
-    editarMotorista: (el) => editar({ titulo: 'Motorista', colecao: 'motoristas', campos: CAMPOS_MOTORISTA, doc: S().motoristas.find((x) => x.id === el.dataset.id) }),
+    editarMotorista: (el) => editar({ titulo: 'Motorista', colecao: 'motoristas', campos: CAMPOS_MOTORISTA, doc: S().motoristas.find((x) => x.id === el.dataset.id),
+      antesDeApagar: travaUso('motoristaId', 'Este motorista', 'Para ele sair da equipe sem perder o histórico, desmarque "Ativo" e salve (e desative o acesso dele em Configurações).') }),
     novoCliente: () => editar({ titulo: 'Cliente', colecao: 'clientes', campos: CAMPOS_CLIENTE, prefixo: 'cl' }),
-    editarCliente: (el) => editar({ titulo: 'Cliente', colecao: 'clientes', campos: CAMPOS_CLIENTE, doc: S().clientes.find((x) => x.id === el.dataset.id) }),
+    editarCliente: (el) => editar({ titulo: 'Cliente', colecao: 'clientes', campos: CAMPOS_CLIENTE, doc: S().clientes.find((x) => x.id === el.dataset.id), antesDeApagar: travaUso('clienteId', 'Este cliente', 'Ele pode ficar cadastrado sem atrapalhar.') }),
     grupo: (el, e) => { if (e?.target.closest('button')) return; const c = el.closest('.grupo'); c.classList.toggle('aberto'); if (c.classList.contains('aberto')) gruposAbertos.add(el.dataset.id); else gruposAbertos.delete(el.dataset.id); },
     expandirTudo: () => document.querySelectorAll('.grupo').forEach((g) => { g.classList.add('aberto'); const id = g.querySelector('[data-act=grupo]')?.dataset.id; if (id != null) gruposAbertos.add(id); }),
     recolherTudo: () => { document.querySelectorAll('.grupo').forEach((g) => g.classList.remove('aberto')); gruposAbertos.clear(); },
@@ -357,7 +371,7 @@ function vPainel({ query }) {
         ${chart({ type: 'line', height: 220, labels: hist.map((h) => monthLabel(h.mes)), series: [{ name: 'Faturamento', color: 'var(--s1)', values: hist.map((h) => h.faturamento) }, { name: 'Custos', color: 'var(--s2)', values: hist.map((h) => h.custos), dash: true }, { name: 'Resultado', color: 'var(--ink-3)', values: hist.map((h) => Math.max(0, h.resultado)) }], fmt: moneyK })}</div>
       <div class="card"><div class="head"><h2>Para onde vai o dinheiro</h2><span class="muted small">clique para ver o extrato</span></div>
         ${cats.length ? hbars(cats.map((c, i) => ({ label: c.label, value: c.valor, color: CORES_CUSTO[i % CORES_CUSTO.length], sub: `${percent(c.valor / r.custos)} dos custos · ${plural(c.n, 'lançamento')}`, attrs: `data-act="detalhe" data-k="categoria" data-cat="${c.cat}" data-p="${p}"` })), money0) : empty('Sem custos no período.', 'money')}
-        <div class="small ink2 mt">A receber: <b>${money0(sum(rec, (v) => D.fechamento(s, v).faltaReceber || v.valorFrete))}</b> em ${plural(rec.length, 'frete')} <a href="#/viagens?f=receber">ver</a></div></div>
+        <div class="small ink2 mt">A receber: <b>${money0(sum(rec, (v) => D.faltaReceber(s, v)))}</b> em ${plural(rec.length, 'frete')} <a href="#/viagens?f=receber">ver</a></div></div>
     </div>
     <div class="grid g2 mt">
       <div class="card"><div class="head"><h2>Lucro por viagem</h2><span class="muted small">${plural(rv.length, 'viagem', 'viagens')}</span></div>
@@ -374,9 +388,9 @@ function vPainel({ query }) {
     ${consumo.length ? `<div class="card mt"><div class="head"><h2>Consumo por caminhão</h2><span class="muted small">km/l</span></div>${hbars(sortBy(consumo, (x) => -x.c).map((x) => ({ label: D.nomeVeiculo(x.v), value: x.c, vtxt: x.c.toFixed(2).replace('.', ',') + ' km/l', attrs: `data-act="goto" data-h="#/veiculo/${x.v.id}"` })), (v) => v.toFixed(2), { color: 'var(--s3)' })}</div>` : ''}
     <div class="card pad-0 mt"><div style="padding:16px 16px 0" class="row between"><h2>Resultado por veículo</h2><span class="muted small">clique para detalhar</span></div><div class="tbl-wrap"><table class="tbl">
       <thead><tr><th>Veículo</th><th class="r">Viagens</th><th class="r hide-m">Km</th><th class="r hide-m">Consumo</th><th class="r">Faturamento</th><th class="r hide-m">Custos</th><th class="r">Resultado</th><th class="r hide-m">R$/km</th></tr></thead>
-      <tbody>${sortBy(r.porVeiculo, (x) => -x.resultado).map((x) => { const c = D.consumoGeral(s, x.v.id, de, ate); return `<tr class="click" data-act="goto" data-h="#/veiculo/${x.v.id}"><td><b>${esc(x.v.placa)}</b><div class="tiny muted">${esc(x.v.apelido || x.v.modelo || '')}</div></td><td class="r">${x.viagens}</td><td class="r hide-m">${int(x.km)}</td><td class="r hide-m">${c ? c.toFixed(2) + ' km/l' : '—'}</td><td class="r">${money0(x.faturamento)}</td><td class="r hide-m">${money0(x.custos)}</td><td class="r"><b class="${x.resultado >= 0 ? 'up' : 'down'}">${money0(x.resultado)}</b></td><td class="r hide-m">${x.km ? money(x.resultado / x.km) : '—'}</td></tr>`; }).join('') || `<tr><td colspan="8">${empty('Cadastre o primeiro veículo.', 'truck')}</td></tr>`}</tbody>
+      <tbody>${sortBy(r.porVeiculo, (x) => -x.resultado).map((x) => { const c = D.consumoGeral(s, x.v.id, de, ate); return `<tr ${x.v.geral ? 'title="Despesas sem caminhão (ex.: seguro da frota)"' : `class="click" data-act="goto" data-h="#/veiculo/${x.v.id}"`}><td><b>${esc(x.v.placa)}</b><div class="tiny muted">${esc(x.v.apelido || x.v.modelo || '')}</div></td><td class="r">${x.viagens}</td><td class="r hide-m">${int(x.km)}</td><td class="r hide-m">${c ? c.toFixed(2) + ' km/l' : '—'}</td><td class="r">${money0(x.faturamento)}</td><td class="r hide-m">${money0(x.custos)}</td><td class="r"><b class="${x.resultado >= 0 ? 'up' : 'down'}">${money0(x.resultado)}</b></td><td class="r hide-m">${x.km ? money(x.resultado / x.km) : '—'}</td></tr>`; }).join('') || `<tr><td colspan="8">${empty('Cadastre o primeiro veículo.', 'truck')}</td></tr>`}</tbody>
       <tfoot><tr><td>Total</td><td class="r">${r.viagens}</td><td class="r hide-m">${int(r.km)}</td><td class="hide-m"></td><td class="r">${money0(r.faturamento)}</td><td class="r hide-m">${money0(r.custos)}</td><td class="r">${money0(r.resultado)}</td><td class="r hide-m">${r.km ? money(r.resultado / r.km) : '—'}</td></tr></tfoot></table></div></div>
-    <div class="tiny muted mt-s">Resultado = fretes das viagens concluídas − combustível − despesas − manutenção − comissões dos motoristas. Despesas gerais (sem veículo, ex.: seguro da frota) entram no total, não nos veículos.</div>`);
+    <div class="tiny muted mt-s">Resultado = fretes das viagens concluídas − combustível − despesas − manutenção − comissões dos motoristas. Despesas sem caminhão (ex.: seguro da frota) aparecem na linha “Sem caminhão”, e as linhas somam o total.</div>`);
 }
 
 // ---------- Detalhamento (tela sobreposta) ----------
@@ -448,9 +462,10 @@ function exportarPeriodo(p) {
 function vViagens({ query }) {
   const s = S();
   const f = query.f || 'abertas';
-  const filtros = { abertas: (v) => v.status !== 'concluida', receber: (v) => v.status === 'concluida' && !v.recebido && +v.valorFrete > 0, concluidas: (v) => v.status === 'concluida', todas: () => true };
+  const arecL = D.aReceber(s), arec = new Set(arecL.map((v) => v.id));
+  const filtros = { abertas: (v) => v.status !== 'concluida', receber: (v) => arec.has(v.id), concluidas: (v) => v.status === 'concluida', todas: () => true };
   const lista = sortBy(s.viagens.filter(filtros[f]), (v) => v.dataSaida + String(v.numero).padStart(6, '0'), true);
-  const totRec = sum(D.aReceber(s), (v) => v.valorFrete);
+  const totRec = sum(arecL, (v) => D.faltaReceber(s, v));
   return A.tela('Viagens', `${A.pageHead('Viagens', f === 'receber' ? `A receber: <b>${money0(totRec)}</b>` : '', A.busca('Buscar destino, placa, motorista…') + `<button class="btn" data-act="novaViagem">${icon('plus')} Viagem</button>`)}
     <div class="seg mb" style="max-width:100%;overflow-x:auto">${[['abertas', 'Em andamento'], ['receber', 'A receber'], ['concluidas', 'Concluídas'], ['todas', 'Todas']].map(([v, n]) => `<button class="${f === v ? 'on' : ''}" data-act="goto" data-h="#/viagens?f=${v}">${n}</button>`).join('')}</div>
     <div class="card pad-0"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Viagem</th><th class="hide-m">Veículo · motorista</th><th>Saída</th><th>Situação</th><th class="r">Frete</th><th class="r hide-m">Lucro</th><th class="r hide-m">Km</th><th></th></tr></thead>
@@ -459,7 +474,7 @@ function vViagens({ query }) {
         <td class="hide-m small">${esc(ve?.placa || '—')} · ${esc(mo?.nome || '—')}</td><td>${dateShort(v.dataSaida)}</td>
         <td>${badge(st?.label || v.status, st?.tom)} ${conferidoBadge(v)}${v.status === 'concluida' && +v.valorFrete > 0 ? (v.recebido ? ' ' + badge('Recebido', 'ok') : '') : ''}</td>
         <td class="r">${+v.valorFrete ? money0(v.valorFrete) : '<span class="muted">definir</span>'}</td>${(() => { const r = D.resultadoViagem(s, v); return `<td class="r hide-m">${+v.valorFrete ? `<b class="${r.lucro >= 0 ? 'up' : 'down'}">${money0(r.lucro)}</b><div class="tiny muted">${percent(r.margem)} do frete</div>` : '—'}</td>`; })()}<td class="r hide-m">${D.kmViagem(v) ? int(D.kmViagem(v)) : '—'}</td>
-        <td class="r" style="white-space:nowrap">${v.status === 'concluida' && !v.recebido && +v.valorFrete > 0 ? `<button class="btn ghost sm" data-act="receber" data-id="${v.id}">Recebido</button> ` : ''}<button class="btn ${v.fechadoEm || v.status !== 'concluida' ? 'ghost' : ''} sm" data-act="abrirViagem" data-id="${v.id}" title="Abrir a viagem">${v.fechadoEm ? icon('check') + ' Fechada' : v.status === 'concluida' ? icon('money') + ' Fechar' : 'Abrir'}</button> <button class="iconbtn" data-act="excluirViagem" data-id="${v.id}" aria-label="Excluir viagem" title="Excluir viagem">${icon('trash')}</button></td></tr>`; }).join('') || `<tr><td colspan="8">${empty('Nenhuma viagem aqui.', 'map')}</td></tr>`}</tbody></table></div></div>`);
+        <td class="r" style="white-space:nowrap">${arec.has(v.id) ? `<button class="btn ghost sm" data-act="receber" data-id="${v.id}">Recebido</button> ` : ''}<button class="btn ${v.fechadoEm || v.status !== 'concluida' ? 'ghost' : ''} sm" data-act="abrirViagem" data-id="${v.id}" title="Abrir a viagem">${v.fechadoEm ? icon('check') + ' Fechada' : v.status === 'concluida' ? icon('money') + ' Fechar' : 'Abrir'}</button> <button class="iconbtn" data-act="excluirViagem" data-id="${v.id}" aria-label="Excluir viagem" title="Excluir viagem">${icon('trash')}</button></td></tr>`; }).join('') || `<tr><td colspan="8">${empty('Nenhuma viagem aqui.', 'map')}</td></tr>`}</tbody></table></div></div>`);
 }
 
 // ---------- Viagem: tudo o que aconteceu nela e o fechamento ----------
@@ -487,9 +502,9 @@ function vViagem({ id }) {
       `${badge(st?.label || v.status, st?.tom)}${fechada ? ' ' + badge('Fechada em ' + date(v.fechadoEm), 'ok') : ''} · ${esc(D.nomeVeiculo(ve))} · ${esc(mo?.nome || '—')} · ${date(v.dataSaida)}${v.dataChegada ? ' a ' + date(v.dataChegada) : ''}${D.kmViagem(v) ? ' · ' + km(D.kmViagem(v)) : ''}${cl ? ' · ' + esc(cl.nome) : ''}${v.carga ? ' · ' + esc(v.carga) : ''}`, acoes)}
     <div class="grid g4">${kpi('Frete', money0(f.frete), f.faltaReceber ? `falta receber ${money0(f.faltaReceber)}` : f.frete ? 'todo recebido' : '<b>defina o valor</b>')}${kpi('Custos', money0(f.custosTotal), `${plural(desp.length + custosNaViagem.length, 'lançamento')}`)}${kpi(`Comissão ${f.pct}%`, money0(f.comissao), esc(mo?.nome || ''))}${kpi('Lucro', `<span class="${f.lucro >= 0 ? 'up' : 'down'}">${money0(f.lucro)}</span>`, percent(f.margem) + ' do frete')}</div>
     <div class="grid g2 mt">
-      <div class="card"><div class="head"><h2>Receitas</h2><button class="btn sm" data-act="lancarReceita" data-id="${id}">${icon('plus')} Receita</button></div>
+      <div class="card"><div class="head"><h2>Receitas</h2>${fechada ? '' : `<button class="btn sm" data-act="lancarReceita" data-id="${id}">${icon('plus')} Receita</button>`}</div>
         <div class="list">${[...recAntigos.map((x) => linhaR(x, true)), ...recDocs.map((x) => linhaR(x))].join('') || empty('Lance como o frete foi recebido: PIX ao dono, carta frete, dinheiro com o motorista…', 'money')}</div></div>
-      <div class="card"><div class="head"><h2>Despesas</h2><button class="btn sm" data-act="lancarDespesa" data-id="${id}">${icon('plus')} Despesa</button></div>
+      <div class="card"><div class="head"><h2>Despesas</h2>${fechada ? '' : `<button class="btn sm" data-act="lancarDespesa" data-id="${id}">${icon('plus')} Despesa</button>`}</div>
         <div class="list">${custosNaViagem.map(([k, n]) => `<div class="li"><div class="avatar">${icon('receipt')}</div><div class="grow"><div class="t small">${n}</div><div class="s">${(v.pagoMotorista || {})[k] ? '<b>pago pelo motorista</b>' : 'pago pela empresa'}</div></div><b class="num small">${money(v[k])}</b></div>`).join('')}${desp.map(linhaD).join('') || (custosNaViagem.length ? '' : empty('Combustível, pedágio, alimentação… lançados pelo motorista ou aqui.', 'receipt'))}</div></div>
     </div>
     <div class="mt">${resumoHTML(f)}</div>
