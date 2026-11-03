@@ -73,11 +73,22 @@ export function resultadoViagem(s, v) {
   return r;
 }
 
+// Data em que um custo entra no resultado: o de uma viagem vai junto com ela (na chegada; enquanto não chega, fica de fora);
+// o sem viagem, na própria data. Assim frete e custos da viagem caem sempre no mesmo período.
+export function dataCusto(s, x, mapa) {
+  if (!x.viagemId) return x.data;
+  const v = mapa ? mapa.get(x.viagemId) : s.viagens.find((y) => y.id === x.viagemId);
+  if (!v) return x.data;
+  return v.status === 'concluida' ? dataViagem(v) : null;
+}
+const mapaViagens = (s) => new Map(s.viagens.map((v) => [v.id, v]));
+
 // Resultado de um período, total e por veículo
 export function resultado(s, de, ate) {
   const viagens = s.viagens.filter((v) => v.status === 'concluida' && noPeriodo(dataViagem(v), de, ate));
-  const abast = s.abastecimentos.filter((a) => noPeriodo(a.data, de, ate));
-  const desp = s.despesas.filter((d) => noPeriodo(d.data, de, ate));
+  const mv = mapaViagens(s);
+  const abast = s.abastecimentos.filter((a) => noPeriodo(dataCusto(s, a, mv), de, ate));
+  const desp = s.despesas.filter((d) => noPeriodo(dataCusto(s, d, mv), de, ate));
   const manut = s.manutencoes.filter((m) => noPeriodo(m.data, de, ate));
   const conta = (vid) => {
     const f = (arr) => (vid === undefined ? arr : arr.filter((x) => x.veiculoId === vid));
@@ -194,8 +205,9 @@ export function itensCusto(s, de, ate) {
     add('outros', dataViagem(v), `Outros · ${rota}`, v.outros, v.veiculoId, v.motoristaId, 'viagens', v.id);
     add('comissao', dataViagem(v), `Comissão ${pctViagem(v, s)}% · ${rota}`, comissao(v, s), v.veiculoId, v.motoristaId, 'viagens', v.id);
   }
-  for (const a of s.abastecimentos.filter((a) => noPeriodo(a.data, de, ate))) add('combustivel', a.data, `Abastecimento${a.litros ? ' · ' + (+a.litros).toLocaleString('pt-BR') + ' l' : ''}${a.posto ? ' · ' + a.posto : ''}`, a.valor, a.veiculoId, a.motoristaId, 'abastecimentos', a.id);
-  for (const d of s.despesas.filter((d) => noPeriodo(d.data, de, ate))) add(d.categoria || 'outros', d.data, `${nomeCategoria(d.categoria)}${d.descricao ? ' · ' + d.descricao : ''}`, d.valor, d.veiculoId, d.motoristaId, 'despesas', d.id);
+  const mv = mapaViagens(s);
+  for (const a of s.abastecimentos.filter((a) => noPeriodo(dataCusto(s, a, mv), de, ate))) add('combustivel', a.data, `Abastecimento${a.litros ? ' · ' + (+a.litros).toLocaleString('pt-BR') + ' l' : ''}${a.posto ? ' · ' + a.posto : ''}`, a.valor, a.veiculoId, a.motoristaId, 'abastecimentos', a.id);
+  for (const d of s.despesas.filter((d) => noPeriodo(dataCusto(s, d, mv), de, ate))) add(d.categoria || 'outros', d.data, `${nomeCategoria(d.categoria)}${d.descricao ? ' · ' + d.descricao : ''}`, d.valor, d.veiculoId, d.motoristaId, 'despesas', d.id);
   for (const m of s.manutencoes.filter((m) => noPeriodo(m.data, de, ate))) add('oficina', m.data, `${nomeManut(m.tipo)}${m.descricao ? ' · ' + m.descricao : ''}${m.oficina ? ' (' + m.oficina + ')' : ''}`, m.valor, m.veiculoId, null, 'manutencoes', m.id);
   return out;
 }

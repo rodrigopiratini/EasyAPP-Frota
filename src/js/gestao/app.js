@@ -234,17 +234,20 @@ const A = criarApp({
     },
     lancarReceita: (el) => { const v = S().viagens.find((x) => x.id === el.dataset.id); if (v) receitaForm(v); },
     editarReceita: (el) => { const r = S().recebimentos.find((x) => x.id === el.dataset.id); const v = S().viagens.find((x) => x.id === r?.viagemId) || {}; if (r) receitaForm(v, r); },
-    fecharViagem: async (el) => {
+    fecharViagem: (el) => {
       const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
+      const w = window.open('', '_blank'); // abre já no clique (senão o navegador bloqueia a janela)
       const f = D.fechamento(S(), v);
-      if (!(await confirmar(`Fechar a viagem #${v.numero || ''}? ${esc(quemDeveTxt(f))}. Os lançamentos ficam conferidos (o motorista não altera mais).`, { ok: 'Fechar viagem', titulo: 'Fechamento' }))) return;
       A.store.commit((s) => {
         const x = s.viagens.find((y) => y.id === v.id);
         Object.assign(x, { fechadoEm: today(), conferido: true, status: 'concluida', dataChegada: x.dataChegada || today(), numero: x.numero || D.proximoNumero(s) });
         if (f.faltaReceber === 0 && f.frete > 0) Object.assign(x, { recebido: true, recebidoEm: x.recebidoEm || today() });
         for (const { col, x: l } of D.lancamentosDa(s, v.id)) s[col].find((y) => y.id === l.id).conferido = true;
       });
-      toast('Viagem fechada');
+      gruposAbertos.delete(v.id);
+      toast(`Viagem #${v.numero || ''} fechada · ${quemDeveTxt(f)}`);
+      if (w) { w.document.write(relatorio(S(), S().viagens.find((x) => x.id === v.id), S().meta.empresa)); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 400); }
+      else toast('Libere as janelas (pop-up) para ver o relatório; ele também fica na página da viagem');
     },
     reabrirViagem: (el) => { A.store.commit((s) => { s.viagens.find((x) => x.id === el.dataset.id).fechadoEm = null; }); toast('Viagem reaberta para ajustes'); },
     pdfViagem: (el) => {
@@ -284,12 +287,14 @@ const A = criarApp({
     novoCliente: () => editar({ titulo: 'Cliente', colecao: 'clientes', campos: CAMPOS_CLIENTE, prefixo: 'cl' }),
     editarCliente: (el) => editar({ titulo: 'Cliente', colecao: 'clientes', campos: CAMPOS_CLIENTE, doc: S().clientes.find((x) => x.id === el.dataset.id) }),
     grupo: (el, e) => { if (e?.target.closest('button')) return; const c = el.closest('.grupo'); c.classList.toggle('aberto'); if (c.classList.contains('aberto')) gruposAbertos.add(el.dataset.id); else gruposAbertos.delete(el.dataset.id); },
+    expandirTudo: () => document.querySelectorAll('.grupo').forEach((g) => { g.classList.add('aberto'); const id = g.querySelector('[data-act=grupo]')?.dataset.id; if (id != null) gruposAbertos.add(id); }),
+    recolherTudo: () => { document.querySelectorAll('.grupo').forEach((g) => g.classList.remove('aberto')); gruposAbertos.clear(); },
     conferirGrupo: (el) => {
-      const id = el.dataset.id;
-      A.store.commit((s) => { for (const x of D.aConferir(s)) { const col = colDe(x); if ((col === 'viagens' ? x.id : x.viagemId || '') === id) s[col].find((y) => y.id === x.id).conferido = true; } });
-      gruposAbertos.delete(id); toast(id ? 'Viagem conferida' : 'Conferido');
+      const id = el.dataset.id; gruposAbertos.add(id);
+      A.store.commit((s) => { if (id) { for (const { col, x } of D.lancamentosDa(s, id)) s[col].find((y) => y.id === x.id).conferido = true; } else for (const x of D.aConferir(s)) { const col = colDe(x); if (col !== 'viagens' && !x.viagemId) s[col].find((y) => y.id === x.id).conferido = true; } });
     },
-    conferir: (el) => { const [col, id] = el.dataset.ref.split(':'); A.store.commit((s) => { s[col].find((x) => x.id === id).conferido = true; }); toast('Conferido'); },
+    // ✓ liga e desliga (dá para desmarcar até fechar a viagem)
+    conferir: (el) => { const [col, id] = el.dataset.ref.split(':'); const x0 = S()[col].find((x) => x.id === id); if (x0?.viagemId) gruposAbertos.add(x0.viagemId); A.store.commit((s) => { const x = s[col].find((y) => y.id === id); x.conferido = !x.conferido; }); },
     conferirTudo: async () => {
       const itens = D.aConferir(S());
       if (!(await confirmar(`Marcar ${plural(itens.length, 'lançamento')} como conferido? Depois disso os motoristas não alteram mais.`, { ok: 'Conferir tudo' }))) return;
@@ -494,29 +499,38 @@ function vViagem({ id }) {
 // ---------- Conferir lançamentos dos motoristas ----------
 const gruposAbertos = new Set();
 const colDe = (x) => (x.origem !== undefined && x.destino !== undefined ? 'viagens' : x.forma !== undefined ? 'recebimentos' : x.litros !== undefined ? 'abastecimentos' : 'despesas');
+// Conferir: cada viagem ainda não fechada com os lançamentos dela. Vai marcando ✓; com tudo conferido, "Fechar viagem" gera o relatório.
 function vConferir() {
   const s = S();
-  const itens = D.aConferir(s).map((x) => { const col = colDe(x); return { x, col, data: col === 'viagens' ? D.dataViagem(x) : x.data, grupo: col === 'viagens' ? x.id : x.viagemId || '' }; });
-  const grupos = new Map();
-  for (const it of itens) { if (!grupos.has(it.grupo)) grupos.set(it.grupo, []); grupos.get(it.grupo).push(it); }
-  const lista = sortBy([...grupos.entries()].map(([id, its]) => ({ id, v: id ? s.viagens.find((v) => v.id === id) : null, its: sortBy(its, (i) => (i.col === 'viagens' ? '0' : '1') + i.data) })), (g) => (g.v ? g.v.dataSaida || '' : '0000'), true);
-  const desc = ({ x, col }) => col === 'viagens' ? `Viagem encerrada pelo motorista · ${D.kmViagem(x) ? int(D.kmViagem(x)) + ' km' : 'km não informado'}${+x.valorFrete ? '' : ' · <b>definir valor do frete</b>'}`
-    : col === 'abastecimentos' ? `Combustível · ${(+x.litros || 0).toLocaleString('pt-BR')} l${x.km ? ' · ' + int(x.km) + ' km' : ''}${x.posto ? ' · ' + esc(x.posto) : ''}` : col === 'recebimentos' ? `Receita · ${esc(D.nomeForma(x.forma))} · ficou com ${x.com === 'motorista' ? 'o motorista' : 'o dono'}` : `${esc(D.nomeCategoria(x.categoria))}${x.descricao ? ' · ' + esc(x.descricao) : ''}`;
-  const act = { viagens: 'abrirViagem', abastecimentos: 'editarAbast', despesas: 'editarDespesa', recebimentos: 'editarReceita' };
-  const linha = (i) => `<div class="li"><div class="avatar">${icon(i.col === 'viagens' ? 'map' : i.col === 'abastecimentos' ? 'fuel' : i.col === 'recebimentos' ? 'money' : 'receipt')}</div>
-      <div class="grow click" data-act="${act[i.col]}" data-id="${i.x.id}"><div class="t small">${desc(i)}</div><div class="s">${dateShort(i.data)}${i.x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ''}</div></div>
-      ${i.col !== 'viagens' ? `<b class="num ${i.col === 'recebimentos' ? 'up' : ''}">${money(i.x.valor)}</b>` : ''}<button class="btn ghost sm" data-act="conferir" data-ref="${i.col}:${i.x.id}" title="Conferir este">${icon('check')}</button></div>`;
-  const cab = (g) => {
-    const v = g.v, mo = D.motorista(s, v?.motoristaId || g.its[0]?.x.motoristaId), ve = D.veiculo(s, v?.veiculoId || g.its[0]?.x.veiculoId);
-    const desp = sum(g.its.filter((i) => i.col === 'abastecimentos' || i.col === 'despesas'), (i) => +i.x.valor), rec = sum(g.its.filter((i) => i.col === 'recebimentos'), (i) => +i.x.valor);
-    return `<div class="row between gap-s click" data-act="grupo" data-id="${g.id}" style="padding:14px 16px;flex-wrap:wrap">
-      <div class="row gap-s grow" style="min-width:220px"><span class="grupo-seta">▸</span><div><div class="t"><b>${v ? `#${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}` : 'Lançamentos sem viagem'}</b> ${v ? badge(D.STATUS_VIAGEM[v.status]?.label || '', D.STATUS_VIAGEM[v.status]?.tom) : ''}</div>
-        <div class="s small muted">${esc(mo?.nome || '—')} · ${esc(ve?.placa || '—')}${v ? ' · ' + dateShort(v.dataSaida) + (v.dataChegada ? ' a ' + dateShort(v.dataChegada) : '') : ''} · ${plural(g.its.length, 'item', 'itens')} para conferir${desp ? ' · despesas ' + money0(desp) : ''}${rec ? ' · receitas ' + money0(rec) : ''}</div></div></div>
-      <div class="row gap-s">${v ? `<button class="btn ghost sm" data-act="abrirViagem" data-id="${v.id}">Abrir viagem</button>` : ''}<button class="btn sm" data-act="conferirGrupo" data-id="${g.id}">${icon('check')} Conferir ${v ? 'viagem' : 'todos'}</button></div></div>`;
+  const pendentes = D.aConferir(s);
+  const comPend = new Set(pendentes.map((x) => (colDe(x) === 'viagens' ? x.id : x.viagemId)).filter(Boolean));
+  const viagens = sortBy(s.viagens.filter((v) => !v.fechadoEm && (v.status === 'concluida' || comPend.has(v.id))), (v) => (v.status === 'concluida' ? '1' : '0') + (v.dataChegada || v.dataSaida), true);
+  const soltos = pendentes.filter((x) => colDe(x) !== 'viagens' && !x.viagemId);
+  const desc = (col, x) => col === 'abastecimentos' ? `Combustível · ${(+x.litros || 0).toLocaleString('pt-BR')} l${x.km ? ' · ' + int(x.km) + ' km' : ''}${x.posto ? ' · ' + esc(x.posto) : ''}` : col === 'recebimentos' ? `Receita · ${esc(D.nomeForma(x.forma))} · ficou com ${x.com === 'motorista' ? 'o motorista' : 'o dono'}` : `${esc(D.nomeCategoria(x.categoria))}${x.descricao ? ' · ' + esc(x.descricao) : ''}`;
+  const act = { abastecimentos: 'editarAbast', despesas: 'editarDespesa', recebimentos: 'editarReceita' };
+  const linha = ({ col, x }) => `<div class="li"><button class="check ${x.conferido ? 'on' : ''}" data-act="conferir" data-ref="${col}:${x.id}" aria-label="${x.conferido ? 'Conferido' : 'Conferir'}" title="${x.conferido ? 'Conferido (clique para desmarcar)' : 'Clique para conferir'}">${icon('check')}</button>
+      <div class="grow click" data-act="${act[col]}" data-id="${x.id}"><div class="t small">${desc(col, x)}</div><div class="s">${dateShort(x.data)}${col !== 'recebimentos' ? (x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ' · pago pela empresa') : ''}${x.motoristaId && !x.conferido ? ' · lançado pelo motorista' : ''}</div></div>
+      <b class="num ${col === 'recebimentos' ? 'up' : ''}">${money(x.valor)}</b></div>`;
+  const grupo = (v) => {
+    const its = sortBy(D.lancamentosDa(s, v.id), (l) => (l.col === 'recebimentos' ? '0' : '1') + l.x.data);
+    const ok = its.filter((l) => l.x.conferido).length, tudo = ok === its.length;
+    const mo = D.motorista(s, v.motoristaId), ve = D.veiculo(s, v.veiculoId), f = D.fechamento(s, v);
+    const podeFechar = tudo && v.status === 'concluida';
+    return `<div class="card pad-0 grupo ${gruposAbertos.has(v.id) || viagens.length === 1 ? 'aberto' : ''}">
+      <div class="grupo-cab click" data-act="grupo" data-id="${v.id}"><span class="grupo-seta">▸</span>
+        <div class="grow"><div class="t"><b>#${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}</b> ${badge(D.STATUS_VIAGEM[v.status]?.label || '', D.STATUS_VIAGEM[v.status]?.tom)}</div>
+        <div class="s small muted">${esc(mo?.nome || '—')} · ${esc(ve?.placa || '—')} · ${dateShort(v.dataSaida)}${v.dataChegada ? ' a ' + dateShort(v.dataChegada) : ''} · frete ${money0(f.frete)}</div></div>
+        <div class="r"><div class="small ${tudo ? 'up' : ''}"><b>${ok} de ${its.length}</b> conferidos</div><div class="tiny muted">${esc(quemDeveTxt(f))}</div></div></div>
+      <div class="itens"><div class="list">${its.map(linha).join('') || '<div class="small muted" style="padding:12px 0">Nenhum lançamento nesta viagem.</div>'}</div>
+        <div class="row between gap-s wrap" style="padding:12px 0 14px"><div class="row gap-s">${its.length && !tudo ? `<button class="btn ghost sm" data-act="conferirGrupo" data-id="${v.id}">${icon('check')} Marcar todos</button>` : ''}<button class="btn ghost sm" data-act="abrirViagem" data-id="${v.id}">Abrir viagem</button></div>
+          ${podeFechar ? `<button class="btn" data-act="fecharViagem" data-id="${v.id}">${icon('check')} Fechar viagem e gerar relatório</button>` : `<span class="small muted">${v.status !== 'concluida' ? 'Viagem em andamento: feche depois da chegada' : 'Confira todos os lançamentos para fechar'}</span>`}</div></div></div>`;
   };
-  return A.tela('Conferir', `${A.pageHead('Conferir lançamentos', 'O que os motoristas lançaram pelo app, por viagem. Clique na viagem para ver os lançamentos. Depois de conferido, o motorista não altera mais.', itens.length ? `<button class="btn ghost" data-act="conferirTudo">${icon('check')} Conferir tudo</button>` : '')}
-    <style>.grupo .itens{display:none;border-top:1px solid var(--linha,#e7e2da);padding:0 16px}.grupo.aberto .itens{display:block}.grupo .grupo-seta{display:inline-flex;transition:transform .15s}.grupo.aberto .grupo-seta{transform:rotate(90deg)}</style>
-    <div class="col" style="gap:12px">${lista.map((g) => `<div class="card pad-0 grupo ${gruposAbertos.has(g.id) || lista.length === 1 ? 'aberto' : ''}" data-grupo="${g.id}">${cab(g)}<div class="itens list">${g.its.map(linha).join('')}</div></div>`).join('') || `<div class="card">${empty('Tudo conferido. 👍', 'check')}</div>`}</div>`);
+  return A.tela('Conferir', `${A.pageHead('Conferir e fechar viagens', 'Clique na viagem, marque ✓ em cada lançamento e, com tudo conferido, feche a viagem: o relatório sai em PDF e fica no app do motorista.',
+      `<button class="btn ghost sm" data-act="expandirTudo">Expandir tudo</button><button class="btn ghost sm" data-act="recolherTudo">Recolher tudo</button>`)}
+    <div class="col" style="gap:12px">${viagens.map(grupo).join('')}
+    ${soltos.length ? `<div class="card pad-0 grupo ${gruposAbertos.has('') ? 'aberto' : ''}"><div class="grupo-cab click" data-act="grupo" data-id=""><span class="grupo-seta">▸</span><div class="grow"><b>Lançamentos sem viagem</b><div class="s small muted">${plural(soltos.length, 'item', 'itens')} para conferir</div></div></div>
+      <div class="itens"><div class="list">${soltos.map((x) => linha({ col: colDe(x), x })).join('')}</div><div style="padding:10px 0 14px"><button class="btn ghost sm" data-act="conferirGrupo" data-id="">${icon('check')} Marcar todos</button></div></div></div>` : ''}
+    ${viagens.length || soltos.length ? '' : `<div class="card">${empty('Nada para conferir. Todas as viagens estão fechadas. 👍', 'check')}</div>`}</div>`);
 }
 
 // ---------- Despesas (combustível é uma das categorias) ----------
@@ -615,11 +629,15 @@ function vMotorista({ id, query }) {
       `<a class="btn ghost" target="_blank" rel="noopener" href="${waLink(m.telefone, texto)}">${icon('whatsapp')} Enviar acerto</a><button class="btn ghost" data-act="editarMotorista" data-id="${id}">${icon('edit')} Editar</button>`)}
     ${segPeriodo(`motorista/${id}`, p)}
     <div class="grid g4">${kpi('Comissões', money0(ac.comissoes), plural(ac.viagens.length, 'viagem', 'viagens'))}${kpi('Pagou na estrada', money0(ac.reembolsos), 'gastos pagos por ele')}${kpi('Ficou com ele', money0(ac.adiantamentos + ac.emEspecie), 'adiantamento + frete em espécie')}${kpi('Saldo do acerto', `<span class="${ac.saldo >= 0 ? '' : 'down'}">${money0(Math.abs(ac.saldo))}</span>`, ac.saldo >= 0 ? 'a empresa paga ao motorista' : 'o motorista devolve à empresa')}</div>
-    <div class="card pad-0 mt"><div style="padding:16px 16px 0"><h2>Acerto por viagem</h2></div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Viagem</th><th class="r hide-m">Comissão</th><th class="r hide-m">Pagou</th><th class="r hide-m">Ficou com ele</th><th class="r">Saldo</th><th></th></tr></thead><tbody>
-      ${ac.porViagem.map((x) => `<tr class="click" data-act="abrirViagem" data-id="${x.v.id}"><td><b>#${x.v.numero || ''} ${esc(x.v.origem)} → ${esc(x.v.destino)}</b><div class="tiny muted">${dateShort(x.v.dataSaida)} a ${dateShort(x.v.dataChegada)} · frete ${money0(x.v.valorFrete)} · ${D.pctViagem(x.v, s)}%</div></td>
-        <td class="r hide-m">${money(x.comissao)}</td><td class="r hide-m">${money(x.pagou)}</td><td class="r hide-m">${money(x.ficou)}</td><td class="r"><b class="${x.saldo >= 0 ? 'up' : 'down'}">${x.saldo >= 0 ? 'receber ' : 'devolve '}${money(Math.abs(x.saldo))}</b></td><td>${x.v.fechadoEm ? badge('Fechada', 'ok') : badge('Aberta', 'warn')}</td></tr>`).join('') || `<tr><td colspan="6">${empty('Nenhuma viagem concluída no período.', 'map')}</td></tr>`}
-      ${ac.foraDeViagem.map((x) => `<tr><td>${esc(x.descricao)}<div class="tiny muted">${dateShort(x.data)} · fora de viagem</div></td><td class="hide-m"></td><td class="hide-m"></td><td class="hide-m"></td><td class="r ${x.sinal > 0 ? 'up' : 'down'}">${x.sinal > 0 ? '' : '−'}${money(x.valor)}</td><td></td></tr>`).join('')}
-      </tbody><tfoot><tr><td>Total do período</td><td class="r hide-m">${money(ac.comissoes)}</td><td class="r hide-m">${money(ac.reembolsos)}</td><td class="r hide-m">${money(ac.adiantamentos + ac.emEspecie)}</td><td class="r">${ac.saldo >= 0 ? 'empresa paga ' : 'devolve '}${money(Math.abs(ac.saldo))}</td><td></td></tr></tfoot></table></div></div>`, { back: true });
+    <div class="row between mt"><h2>Acerto por viagem</h2><div class="row gap-s"><button class="btn ghost sm" data-act="expandirTudo">Expandir tudo</button><button class="btn ghost sm" data-act="recolherTudo">Recolher tudo</button></div></div>
+    <div class="col mt-s" style="gap:10px">${ac.porViagem.map((x) => { const its = sortBy(D.lancamentosDa(s, x.v.id), (l) => l.x.data); return `<div class="card pad-0 grupo">
+      <div class="grupo-cab click" data-act="grupo" data-id="m${x.v.id}"><span class="grupo-seta">▸</span><div class="grow"><b>#${x.v.numero || ''} ${esc(x.v.origem)} → ${esc(x.v.destino)}</b> ${x.v.fechadoEm ? badge('Fechada', 'ok') : badge('Aberta', 'warn')}
+        <div class="s small muted">${dateShort(x.v.dataSaida)} a ${dateShort(x.v.dataChegada)} · frete ${money0(x.v.valorFrete)} · comissão ${D.pctViagem(x.v, s)}% ${money0(x.comissao)} · pagou ${money0(x.pagou)} · ficou com ele ${money0(x.ficou)}</div></div>
+        <div class="r"><b class="${x.saldo >= 0 ? 'up' : 'down'}">${x.saldo >= 0 ? 'receber ' : 'devolve '}${money(Math.abs(x.saldo))}</b></div></div>
+      <div class="itens"><div class="list">${its.map(({ col, x: l }) => `<div class="li click" data-act="${col === 'abastecimentos' ? 'editarAbast' : col === 'recebimentos' ? 'editarReceita' : 'editarDespesa'}" data-id="${l.id}"><div class="avatar">${icon(col === 'abastecimentos' ? 'fuel' : col === 'recebimentos' ? 'money' : 'receipt')}</div><div class="grow"><div class="t small">${col === 'abastecimentos' ? 'Combustível' : col === 'recebimentos' ? 'Receita · ' + esc(D.nomeForma(l.forma)) : esc(D.nomeCategoria(l.categoria))}${l.descricao || l.obs ? ' · ' + esc(l.descricao || l.obs) : ''}</div><div class="s">${dateShort(l.data)} · ${col === 'recebimentos' ? (l.com === 'motorista' ? 'ficou com ele' : 'foi para o dono') : l.pagoPeloMotorista ? 'pago por ele' : 'pago pela empresa'}</div></div><b class="num small ${col === 'recebimentos' ? 'up' : ''}">${money(l.valor)}</b></div>`).join('') || '<div class="small muted" style="padding:10px 0">Nenhum lançamento.</div>'}</div>
+        <div style="padding:10px 0 14px"><button class="btn ghost sm" data-act="abrirViagem" data-id="${x.v.id}">Abrir viagem</button></div></div></div>`; }).join('') || `<div class="card">${empty('Nenhuma viagem concluída no período.', 'map')}</div>`}
+    ${ac.foraDeViagem.length ? `<div class="card pad-0"><div class="list" style="padding:0 16px">${ac.foraDeViagem.map((x) => `<div class="li"><div class="grow"><div class="t small">${esc(x.descricao)}</div><div class="s">${dateShort(x.data)} · fora de viagem</div></div><b class="num small ${x.sinal > 0 ? 'up' : 'down'}">${x.sinal > 0 ? '' : '−'}${money(x.valor)}</b></div>`).join('')}</div></div>` : ''}
+    <div class="card row between"><b>Total do período</b><b>${ac.saldo >= 0 ? 'empresa paga ' : 'devolve '}${money(Math.abs(ac.saldo))}</b></div></div>`, { back: true });
 }
 
 // ---------- Clientes ----------

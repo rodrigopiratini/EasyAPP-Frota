@@ -22,7 +22,8 @@ export function textoWhats(s, v) {
   return `Fechamento viagem #${v.numero || ''} ${v.origem} → ${v.destino}\nFrete: ${money(f.frete)}\nFicou com você: ${money(f.dinheiroMotorista)}\nVocê pagou: ${money(f.gastosMotorista)}\nComissão (${f.pct}%): ${money(f.comissao)}\n${f.saldo > 0.004 ? 'Devolver à empresa: ' + money(f.saldo) : f.saldo < -0.004 ? 'A receber da empresa: ' + money(-f.saldo) : 'Acerto zerado'}`;
 }
 
-export function relatorio(s, v, nomeEmpresa) {
+// paraMotorista: a cópia do motorista não mostra o resultado (lucro) da empresa
+export function relatorio(s, v, nomeEmpresa, { paraMotorista = false } = {}) {
   const f = D.fechamento(s, v);
   const ve = D.veiculo(s, v.veiculoId), mo = D.motorista(s, v.motoristaId);
   const l = (a, b, bold) => `<tr><td>${a}</td><td style="text-align:right;${bold ? 'font-weight:700' : ''}">${b}</td></tr>`;
@@ -44,7 +45,8 @@ export function relatorio(s, v, nomeEmpresa) {
   ${l('Dinheiro do frete que ficou com o motorista', money(f.comMotorista))}${l('Adiantamento recebido', money(f.adiantamento))}
   ${l('(−) Custos pagos pelo motorista', money(f.gastosMotorista))}${l(`(−) Comissão ${f.pct}% sobre ${money(f.frete)}`, money(f.comissao))}</table>
   <div class="tot">${quemDeve(f)}</div>
-  <h2>Resultado da viagem</h2><table>${l('Frete', money(f.frete))}${l('(−) Custos', money(f.custosTotal))}${l('(−) Comissão', money(f.comissao))}${l('Lucro', `${money(f.lucro)} (${(f.margem * 100).toFixed(1).replace('.', ',')}% do frete)`, 1)}</table>
+  ${paraMotorista ? '' : `<h2>Resultado da viagem</h2><table>${l('Frete', money(f.frete))}${l('(−) Custos', money(f.custosTotal))}${l('(−) Comissão', money(f.comissao))}${l('Lucro', `${money(f.lucro)} (${(f.margem * 100).toFixed(1).replace('.', ',')}% do frete)`, 1)}</table>`}
+  ${v.fechadoEm ? `<p style="font-size:12px">Viagem fechada em ${date(v.fechadoEm)}.</p>` : ''}
   ${v.obsFechamento || v.obs ? `<p><b>Obs.:</b> ${esc(v.obsFechamento || v.obs)}</p>` : ''}
   <div class="sig"><div>${esc(mo?.nome || 'Motorista')}</div><div>${esc(nomeEmpresa || 'Empresa')}</div></div>
   <p style="font-size:11px;color:#777;margin-top:24px">Gerado em ${date(today())} pelo EasyApp Frota.</p></body></html>`;

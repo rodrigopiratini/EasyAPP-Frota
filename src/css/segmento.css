@@ -11,3 +11,14 @@
   /* marca da família EasyAPP: quadrado do ícone, barras 1 e 2, barra 3 */
   --marca-fundo: #0E2F28; --marca-a: #4FB393; --marca-b: #E8930C;
 }
+
+/* Grupos que expandem e recolhem (lançamentos por viagem) */
+.grupo .grupo-cab { display: flex; align-items: center; gap: 12px; padding: 14px 16px; flex-wrap: wrap; }
+.grupo .itens { display: none; border-top: 1px solid var(--line); padding: 0 16px; }
+.grupo.aberto .itens { display: block; }
+.grupo .grupo-seta { display: inline-flex; transition: transform .15s; color: var(--ink-3); }
+.grupo.aberto .grupo-seta { transform: rotate(90deg); }
+/* ✓ de conferência */
+.check { width: 34px; height: 34px; flex: none; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface, #fff); color: transparent; display: grid; place-items: center; cursor: pointer; }
+.check:hover { border-color: var(--primaria); color: var(--ink-3); }
+.check.on { background: var(--ok, #2E7D4F); border-color: var(--ok, #2E7D4F); color: #fff; }

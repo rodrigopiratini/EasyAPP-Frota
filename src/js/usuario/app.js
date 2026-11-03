@@ -5,6 +5,7 @@ import * as D from '../dominio.js';
 import { money, money0, date, dateShort, today, esc, sortBy, uid, plural, diffDays, sum } from '../core/fmt.js';
 import { icon, badge, empty, modal, closeModal, toast, kpi, confirmar } from '../core/ui.js';
 import { ligarTres, completarTres } from '../tres.js';
+import { relatorio } from '../gestao/fechamento.js';
 
 const S = () => A.S();
 const eu = () => S().motoristas.find((m) => m.id === A.store.meuRef());
@@ -95,6 +96,7 @@ const A = criarApp({
       formulario('Cheguei ao destino', [{ k: 'dataChegada', label: 'Data de chegada', tipo: 'date', obrig: true }, { k: 'kmFim', label: 'Km no painel na chegada', tipo: 'inteiro', obrig: true }, { k: 'obs', label: 'Observações (opcional)', tipo: 'textarea', col: 2 }], { dataChegada: today(), kmFim: D.kmAtual(S(), v.veiculoId) || '' }, (d) => {
         if (v.kmInicio && d.kmFim < v.kmInicio) return `O km de chegada precisa ser maior que o de saída (${km(v.kmInicio)})`;
         if (d.dataChegada < v.dataSaida) return 'A chegada está antes da saída';
+        if (d.dataChegada > today()) return 'A data de chegada não pode ser depois de hoje';
         A.store.commit((s) => Object.assign(s.viagens.find((x) => x.id === v.id), { status: 'concluida', dataChegada: d.dataChegada, kmFim: d.kmFim, obs: d.obs || v.obs || '' }));
         toast(`Viagem encerrada: ${km(d.kmFim - (v.kmInicio || d.kmFim))} rodados`);
       }, 'Encerrar viagem'); },
@@ -105,6 +107,14 @@ const A = criarApp({
         A.store.commit((s) => s.recebimentos.push({ id: uid('rc'), motoristaId: A.store.meuRef(), viagemId: v.id, veiculoId: v.veiculoId, com: D.comPadrao(d.forma), conferido: false, ...d }));
         toast(`Recebimento lançado: ${money(d.valor)}`);
       });
+    },
+    grupo: (el, e) => { if (e?.target.closest('button')) return; el.closest('.grupo').classList.toggle('aberto'); },
+    expandirTudo: () => document.querySelectorAll('.grupo').forEach((g) => g.classList.add('aberto')),
+    recolherTudo: () => document.querySelectorAll('.grupo').forEach((g) => g.classList.remove('aberto')),
+    relatorio: (el) => {
+      const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
+      const w = window.open('', '_blank'); if (!w) return toast('Libere as janelas (pop-up) para ver o relatório');
+      w.document.write(relatorio(S(), v, S().meta.empresa, { paraMotorista: true })); w.document.close();
     },
     apagarLanc: async (el) => {
       if (!(await confirmar('Apagar este lançamento?', { ok: 'Apagar' }))) return;
@@ -148,22 +158,25 @@ const linha = (x) => {
 };
 
 // Lançamentos agrupados por viagem (os sem viagem ficam no fim)
-const cabViagem = (v) => {
+const cabViagem = (v, extra = '') => {
   const st = D.STATUS_VIAGEM[v.status];
-  return `<div class="row between gap-s" style="padding:14px 16px 6px"><div><b>${esc(v.origem)} → ${esc(v.destino)}</b><div class="small muted">${dateShort(v.dataSaida)}${v.dataChegada ? ' a ' + dateShort(v.dataChegada) : ''}${D.kmViagem(v) ? ' · ' + km(D.kmViagem(v)) : ''} · ${esc(D.veiculo(S(), v.veiculoId)?.placa || '')}</div></div>${v.fechadoEm ? badge('Fechada', 'ok') : badge(st?.label || '', st?.tom)}</div>`;
+  return `<div class="grupo-cab click" data-act="grupo"><span class="grupo-seta">▸</span><div class="grow"><b>${esc(v.origem)} → ${esc(v.destino)}</b><div class="small muted">${dateShort(v.dataSaida)}${v.dataChegada ? ' a ' + dateShort(v.dataChegada) : ''}${D.kmViagem(v) ? ' · ' + km(D.kmViagem(v)) : ''} · ${esc(D.veiculo(S(), v.veiculoId)?.placa || '')}${extra}</div></div>
+    <div class="row gap-s">${v.fechadoEm ? `<button class="btn ghost sm" data-act="relatorio" data-id="${v.id}">${icon('download')} Relatório</button>` + badge('Fechada', 'ok') : badge(st?.label || '', st?.tom)}</div></div>`;
 };
+const botoesGrupo = `<div class="row gap-s mb"><button class="btn ghost sm" data-act="expandirTudo">Expandir tudo</button><button class="btn ghost sm" data-act="recolherTudo">Recolher tudo</button></div>`;
 function vLancamentos() {
   const lanc = [...meus('abastecimentos'), ...meus('despesas'), ...meus('recebimentos')];
   const ids = new Set(lanc.map((x) => x.viagemId).filter(Boolean));
-  const viagens = sortBy(meus('viagens').filter((v) => ids.has(v.id) || v.status !== 'concluida' || !v.fechadoEm), (v) => v.dataSaida, true).slice(0, 30);
+  const viagens = sortBy(meus('viagens'), (v) => v.dataSaida, true).slice(0, 40);
   const soltos = sortBy(lanc.filter((x) => !x.viagemId || !viagens.some((v) => v.id === x.viagemId)), (x) => x.data + x.id, true);
   const bloco = (v) => {
     const its = sortBy(lanc.filter((x) => x.viagemId === v.id), (x) => x.data + x.id, true);
     const desp = sum(its.filter((x) => x.forma === undefined), (x) => +x.valor), rec = sum(its.filter((x) => x.forma !== undefined), (x) => +x.valor);
-    return `<div class="card pad-0 mt-s">${cabViagem(v)}<div class="list" style="padding:0 16px">${its.map(linha).join('') || '<div class="small muted" style="padding:10px 0">Nada lançado nesta viagem.</div>'}</div>
-      ${its.length ? `<div class="small ink2" style="padding:8px 16px 14px">Despesas ${money(desp)} · recebido ${money(rec)}</div>` : ''}</div>`;
+    const aberta = v.id === viagemLanc()?.id;
+    return `<div class="card pad-0 mt-s grupo ${aberta ? 'aberto' : ''}">${cabViagem(v, ` · ${plural(its.length, 'lançamento')}`)}<div class="itens"><div class="list">${its.map(linha).join('') || '<div class="small muted" style="padding:10px 0">Nada lançado nesta viagem.</div>'}</div>
+      ${its.length ? `<div class="small ink2" style="padding:8px 0 14px">Despesas ${money(desp)} · recebido ${money(rec)}</div>` : ''}</div></div>`;
   };
-  return A.tela('Lançamentos', `${A.pageHead('Meus lançamentos', 'Por viagem. Depois de conferido pela empresa, o lançamento não pode mais ser alterado.')}
+  return A.tela('Lançamentos', `${A.pageHead('Minhas viagens e lançamentos', 'Clique na viagem para ver os lançamentos. Viagens fechadas têm o relatório do acerto.')}${botoesGrupo}
     ${viagens.map(bloco).join('') || `<div class="card">${empty('Nenhuma viagem ainda.', 'map')}</div>`}
     ${soltos.length ? `<h2 class="mt">Fora de viagem</h2><div class="card pad-0 mt-s"><div class="list" style="padding:0 16px">${soltos.map(linha).join('')}</div></div>` : ''}`);
 }
@@ -174,16 +187,16 @@ function vAcerto({ query }) {
   const ac = D.acerto(S(), A.store.meuRef(), de, ate);
   const atual = viagemLanc();
   const parcial = atual && atual.status !== 'concluida' ? D.fechamento(S(), atual) : null;
-  const linhaV = (x) => `<div class="card pad-0 mt-s">${cabViagem(x.v)}<div class="tbl-wrap" style="padding:0 8px"><table class="tbl"><tbody>
+  const linhaV = (x) => `<div class="card pad-0 mt-s grupo">${cabViagem(x.v, ` · <b>${x.saldo >= 0 ? 'receber' : 'devolver'} ${money(Math.abs(x.saldo))}</b>`)}<div class="itens"><div class="tbl-wrap"><table class="tbl"><tbody>
       <tr><td>Comissão ${x.f.pct}% sobre ${money(x.f.frete)}</td><td class="r up">${money(x.comissao)}</td></tr>
       <tr><td>O que paguei na viagem</td><td class="r up">${money(x.pagou)}</td></tr>
       <tr><td>O que ficou comigo (frete + adiantamento)</td><td class="r down">−${money(x.ficou)}</td></tr>
-    </tbody><tfoot><tr><td>${x.saldo >= 0 ? 'A receber da empresa' : 'A devolver à empresa'}</td><td class="r"><b>${money(Math.abs(x.saldo))}</b></td></tr></tfoot></table></div></div>`;
+    </tbody><tfoot><tr><td>${x.saldo >= 0 ? 'A receber da empresa' : 'A devolver à empresa'}</td><td class="r"><b>${money(Math.abs(x.saldo))}</b></td></tr></tfoot></table></div></div></div>`;
   return A.tela('Meu acerto', `${A.pageHead('Meu acerto', `${nome} · ${date(de)} a ${date(ate)}`)}
     <div class="seg mb">${[['mes', 'Este mês'], ['ant', 'Mês passado']].map(([v, n]) => `<button class="${p === v ? 'on' : ''}" data-act="goto" data-h="#/acerto?p=${v}">${n}</button>`).join('')}</div>
     <div class="card dark col"><div class="label">Saldo do período</div><div class="grande">${money(Math.abs(ac.saldo))}</div><div class="small">${ac.saldo >= 0 ? 'a receber da empresa' : 'a devolver à empresa'} · ${plural(ac.porViagem.length, 'viagem', 'viagens')} · valores confirmados no fechamento com a empresa</div></div>
-    ${parcial ? `<h2 class="mt">Viagem em andamento</h2><div class="card pad-0 mt-s">${cabViagem(atual)}<div class="small" style="padding:0 16px 14px">Até agora: ficou comigo ${money(parcial.dinheiroMotorista)} · paguei ${money(parcial.gastosMotorista)} · comissão prevista ${money(parcial.comissao)}</div></div>` : ''}
-    <h2 class="mt">Por viagem</h2>${ac.porViagem.map(linhaV).join('') || `<div class="card mt-s">${empty('Nenhuma viagem concluída no período.', 'map')}</div>`}
+    ${parcial ? `<h2 class="mt">Viagem em andamento</h2><div class="card pad-0 mt-s grupo aberto">${cabViagem(atual)}<div class="itens"><div class="small" style="padding:10px 0 14px">Até agora: ficou comigo ${money(parcial.dinheiroMotorista)} · paguei ${money(parcial.gastosMotorista)} · comissão prevista ${money(parcial.comissao)}</div></div></div>` : ''}
+    <div class="row between mt"><h2>Por viagem</h2>${botoesGrupo.replace(' mb', '')}</div>${ac.porViagem.map(linhaV).join('') || `<div class="card mt-s">${empty('Nenhuma viagem concluída no período.', 'map')}</div>`}
     ${ac.foraDeViagem.length ? `<h2 class="mt">Fora de viagem</h2><div class="card pad-0 mt-s"><div class="list" style="padding:0 16px">${ac.foraDeViagem.map((x) => `<div class="li"><div class="grow"><div class="t small">${esc(x.descricao)}</div><div class="s">${dateShort(x.data)}</div></div><b class="num small">${x.sinal > 0 ? '' : '−'}${money(x.valor)}</b></div>`).join('')}</div></div>` : ''}
     <div class="tiny muted mt">A comissão aparece quando a empresa informa o valor do frete da viagem.</div>`);
 }

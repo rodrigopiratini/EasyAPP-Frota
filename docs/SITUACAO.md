@@ -26,6 +26,10 @@
   = devolve/recebe. Relatório PDF, WhatsApp, **Fechar viagem** (confere tudo) e **Reabrir**. Viagem do motorista é numerada pela Gestão ao chegar.
 - **Agrupado por viagem:** Conferir (cada viagem abre os lançamentos dela; "Conferir viagem"), página do motorista (acerto por viagem),
   Lançamentos e Meu acerto no app do motorista. Combustível é uma categoria do menu **Despesas** (não há mais menu Combustível).
+- **Conferir = fechar:** cada viagem não fechada aparece com os lançamentos; ✓ liga/desliga; com tudo conferido, "Fechar viagem e gerar
+  relatório" encerra e abre o PDF. O motorista vê o relatório das viagens fechadas (sem o lucro da empresa) em Lançamentos.
+- Custos lançados numa viagem entram no resultado na data de chegada da viagem (`dataCusto`), junto com o frete. "Cheguei" não aceita data futura.
+- Identidade: marca da família EasyAPP (três barras; cores em `segmento.css`: --marca-fundo/-a/-b).
 - **Excluir viagem** apaga junto as despesas, abastecimentos e recebimentos dela.
 - Km com ponto de milhar (campo `inteiro` do núcleo). Painel: cartões e "Para onde vai o dinheiro" abrem detalhamento/extrato.
 - Os custos que estavam em campos da viagem (dados importados do Financial) viraram despesas ligadas a cada viagem.
