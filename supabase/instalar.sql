@@ -494,7 +494,7 @@ insert into frota.colecoes (nome, leitura, escrita, campo_ref, protegidos, trava
   on conflict (nome) do update set leitura = excluded.leitura, escrita = excluded.escrita, campo_ref = excluded.campo_ref, protegidos = excluded.protegidos, trava = excluded.trava;
 insert into frota.colecoes (nome, leitura, escrita, campo_ref, protegidos, trava) values ('clientes', 'gestao', 'gestao', null, array[]::text[], null)
   on conflict (nome) do update set leitura = excluded.leitura, escrita = excluded.escrita, campo_ref = excluded.campo_ref, protegidos = excluded.protegidos, trava = excluded.trava;
-insert into frota.colecoes (nome, leitura, escrita, campo_ref, protegidos, trava) values ('viagens', 'proprio', 'proprio', 'motoristaId', array['valorFrete', 'clienteId', 'comissaoPct', 'adiantamento', 'recebido', 'recebidoEm', 'numero']::text[], 'conferido')
+insert into frota.colecoes (nome, leitura, escrita, campo_ref, protegidos, trava) values ('viagens', 'proprio', 'proprio', 'motoristaId', array['valorFrete', 'clienteId', 'comissaoPct', 'adiantamento', 'recebido', 'recebidoEm', 'numero', 'combustivel', 'pedagio', 'manutencao', 'outros']::text[], 'conferido')
   on conflict (nome) do update set leitura = excluded.leitura, escrita = excluded.escrita, campo_ref = excluded.campo_ref, protegidos = excluded.protegidos, trava = excluded.trava;
 insert into frota.colecoes (nome, leitura, escrita, campo_ref, protegidos, trava) values ('abastecimentos', 'proprio', 'proprio', 'motoristaId', array[]::text[], 'conferido')
   on conflict (nome) do update set leitura = excluded.leitura, escrita = excluded.escrita, campo_ref = excluded.campo_ref, protegidos = excluded.protegidos, trava = excluded.trava;

@@ -30,13 +30,13 @@ export const SEGMENTO = {
     motoristas: { nome: 'Motoristas', leitura: 'proprio', ref: 'id' },
     clientes: { nome: 'Clientes', leitura: 'gestao' },
     viagens: { nome: 'Viagens', leitura: 'proprio', escrita: 'proprio', ref: 'motoristaId',
-      protegidos: ['valorFrete', 'clienteId', 'comissaoPct', 'adiantamento', 'recebido', 'recebidoEm', 'numero'], trava: 'conferido' },
+      protegidos: ['valorFrete', 'clienteId', 'comissaoPct', 'adiantamento', 'recebido', 'recebidoEm', 'numero', 'combustivel', 'pedagio', 'manutencao', 'outros'], trava: 'conferido' },
     abastecimentos: { nome: 'Abastecimentos', leitura: 'proprio', escrita: 'proprio', ref: 'motoristaId', trava: 'conferido' },
     despesas: { nome: 'Despesas', leitura: 'proprio', escrita: 'proprio', ref: 'motoristaId', trava: 'conferido' },
     manutencoes: { nome: 'Manutenções', leitura: 'gestao' },
   },
 
   campos: { nome: 'nome', placa: 'placa', modelo: 'modelo', status: 'situação', valorFrete: 'valor do frete', comissaoPct: 'comissão', adiantamento: 'adiantamento',
-    recebido: 'recebido', conferido: 'conferido', kmInicio: 'km inicial', kmFim: 'km final', km: 'km', litros: 'litros', valor: 'valor', origem: 'origem', destino: 'destino',
+    recebido: 'recebido', conferido: 'conferido', kmInicio: 'km inicial', kmFim: 'km final', kmRodado: 'km rodado', combustivel: 'combustível', pedagio: 'pedágio', manutencao: 'manutenção', outros: 'outros', apelido: 'apelido', km: 'km', litros: 'litros', valor: 'valor', origem: 'origem', destino: 'destino',
     dataSaida: 'saída', dataChegada: 'chegada', categoria: 'categoria', descricao: 'descrição', cnhValidade: 'validade da CNH', veiculoId: 'veículo', motoristaId: 'motorista', pagoPeloMotorista: 'pago pelo motorista' },
 };

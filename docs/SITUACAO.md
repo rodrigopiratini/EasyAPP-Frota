@@ -6,13 +6,15 @@
 - **Publicação:** push na `main` (GitHub Pages por Actions).
 - **Assinatura:** teste de 30 dias por empresa; o dono da plataforma gerencia em Gestão › Plataforma (e-mail em `frota.plataforma_admins`).
 
-## Ducairo (primeiro cliente real) — trazido do Financial em 03/11/2026
-- Empresa **Transportes Ducairo** (`b6f1d0a2-4c1e-4a7e-9d3b-0d0cca1e0001`), dono = o login dele copiado do Financial (mesmo id, e-mail e senha).
+## TR EDU (Ducairo, primeiro cliente real) — trazido do Financial em 03/11/2026
+- Empresa **TR EDU** (`b6f1d0a2-4c1e-4a7e-9d3b-0d0cca1e0001`), dono = o login do Ducairo copiado do Financial (mesmo id, e-mail e senha).
 - Veio do módulo **Acertos** que o assistente do Financial criou para ele (`registros` caminhoes/motoristas/acertos). No Financial nada foi apagado.
-- Mapeamento: caminhão → `veiculos` (placa; "FH540" → modelo Volvo FH540, cavalo); motorista → `motoristas` (comissão 12%, veículo vinculado);
-  cada acerto → `viagens` concluída e conferida (frete, comissão %, origem/destino, datas; o km da viagem foi em km final, com km inicial 0,
-  porque ele não anotava hodômetro), combustível → `abastecimentos` (valor e litros), pedágio/manutenção/outros → `despesas` da viagem.
-  Os fretes ficaram como recebidos (o módulo dele não controlava recebimento). Resultado e comissões conferidos: batem com o módulo.
+- Os campos do app dele agora existem no Frota e receberam os valores: caminhão → `veiculos` (placa, **apelido**, motorista);
+  motorista → `motoristas`; cada acerto → uma `viagem` concluída com saída, chegada, caminhão, motorista, origem, destino, **km rodado**,
+  valor faturado (`valorFrete`), **combustível**, **litros**, **preço por litro** (calculado), **pedágio**, comissão %, **manutenção**, **outros** e observação.
+  O campo `lancado` (lançar no financeiro do Financial) não tem par no Frota. Fretes marcados como recebidos.
+- Valores com máscara de R$; "preencha 2 de 3" (combustível, litros, preço por litro) na viagem e no abastecimento (`src/js/tres.js`).
+- Resultado, lucro e margem por viagem conferidos: batem com o módulo dele.
 
 ## Próximos passos
 - Avisar o Ducairo: ele entra em `/gestao/` com o mesmo e-mail e senha do Financial. Antes, conferir pelo painel (Apps da fábrica › 👁 ver).

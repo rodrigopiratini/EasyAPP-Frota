@@ -4,6 +4,7 @@ import { formHTML, lerCampos } from '../core/form.js';
 import * as D from '../dominio.js';
 import { money, money0, date, dateShort, today, esc, sortBy, uid, plural, diffDays } from '../core/fmt.js';
 import { icon, badge, empty, modal, closeModal, toast, kpi, confirmar } from '../core/ui.js';
+import { ligarTres, completarTres } from '../tres.js';
 
 const S = () => A.S();
 const eu = () => S().motoristas.find((m) => m.id === A.store.meuRef());
@@ -18,6 +19,7 @@ const CAMPOS_ABAST = [
   { k: 'km', label: 'Km no painel', tipo: 'number', obrig: true },
   { k: 'litros', label: 'Litros', tipo: 'number', obrig: true },
   { k: 'valor', label: 'Valor total', tipo: 'money', obrig: true },
+  { k: 'precoLitro', label: 'Preço por litro', tipo: 'money', dica: 'Preencha 2 de 3: o terceiro é calculado.' },
   { k: 'posto', label: 'Posto' },
   { k: 'tanqueCheio', label: 'Completei o tanque', tipo: 'checkbox', padrao: true },
   { k: 'pagoPeloMotorista', label: 'Paguei do meu bolso (reembolso no acerto)', tipo: 'checkbox', col: 2 },
@@ -55,13 +57,14 @@ const A = criarApp({
   contaExtra: () => { const m = eu(); if (!m) return ''; const d = m.cnhValidade ? diffDays(m.cnhValidade, today()) : null;
     return `<div class="small ink2">CNH ${esc(m.cnhCategoria || '')} válida até <b>${date(m.cnhValidade)}</b> ${d != null && d < 0 ? badge('Vencida', 'crit') : d != null && d <= 30 ? badge('Renove logo', 'warn') : ''}<br>Comissão: ${m.comissaoPct || 0}% do frete · veículo: ${esc(D.veiculo(S(), m.veiculoId)?.placa || '—')}</div>`; },
   acoes: {
-    abastecer: () => formulario('Abastecimento', CAMPOS_ABAST, { veiculoId: veiculoPadrao() }, (d) => {
+    abastecer: () => { formulario('Abastecimento', CAMPOS_ABAST, { veiculoId: veiculoPadrao() }, (d) => {
+      completarTres(d);
       if (d.litros <= 0 || d.litros > 1500) return 'Confira os litros';
       const aviso = avisoKm(d.veiculoId, d.km);
       const salvar = () => A.store.commit((s) => s.abastecimentos.push({ id: uid('ab'), data: today(), motoristaId: A.store.meuRef(), viagemId: viagemAtual()?.id || null, conferido: false, ...d }));
       if (aviso) { confirmar(aviso + ' Salvar assim mesmo?', { ok: 'Salvar' }).then((y) => { if (y) { salvar(); toast('Abastecimento lançado'); } }); return; }
       salvar(); toast(`Abastecimento lançado: ${money(d.valor)}`);
-    }),
+    }); ligarTres('fmo'); },
     despesa: () => formulario('Despesa', CAMPOS_DESPESA, { veiculoId: veiculoPadrao() }, (d) => {
       A.store.commit((s) => s.despesas.push({ id: uid('dp'), data: today(), motoristaId: A.store.meuRef(), viagemId: viagemAtual()?.id || null, conferido: false, ...d }));
       toast(`Despesa lançada: ${money(d.valor)}`);

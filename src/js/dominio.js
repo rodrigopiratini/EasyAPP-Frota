@@ -19,9 +19,13 @@ export const VENCIMENTOS = [['licenciamento', 'Licenciamento'], ['seguro', 'Segu
 export const veiculo = (s, id) => s.veiculos.find((x) => x.id === id);
 export const motorista = (s, id) => s.motoristas.find((x) => x.id === id);
 export const cliente = (s, id) => s.clientes.find((x) => x.id === id);
-export const nomeVeiculo = (v) => (v ? `${v.placa}${v.modelo ? ' · ' + v.modelo : ''}` : '—');
+export const nomeVeiculo = (v) => (v ? `${v.placa}${v.apelido || v.modelo ? ' · ' + (v.apelido || v.modelo) : ''}` : '—');
 export const proximoNumero = (s) => Math.max(0, ...s.viagens.map((v) => +v.numero || 0)) + 1;
-export const kmViagem = (v) => (v.kmFim > 0 && v.kmInicio >= 0 && v.kmFim >= v.kmInicio ? v.kmFim - v.kmInicio : 0);
+// Km da viagem: o "km rodado" digitado ou, sem ele, a diferença do hodômetro (chegada − saída)
+export const kmViagem = (v) => (+v.kmRodado > 0 ? +v.kmRodado : v.kmFim > 0 && v.kmInicio >= 0 && v.kmFim >= v.kmInicio ? v.kmFim - v.kmInicio : 0);
+// Custos lançados direto na viagem (o acerto): combustível, pedágio, manutenção e outros
+export const CUSTOS_VIAGEM = [['combustivel', 'Combustível'], ['pedagio', 'Pedágio'], ['manutencao', 'Manutenção'], ['outros', 'Outros']];
+export const despesasNaViagem = (v) => (+v.pedagio || 0) + (+v.manutencao || 0) + (+v.outros || 0);
 export const comissao = (v) => ((+v.valorFrete || 0) * (+v.comissaoPct || 0)) / 100;
 const noPeriodo = (d, de, ate) => d && d >= de && d <= ate;
 export const dataViagem = (v) => v.dataChegada || v.dataSaida;
@@ -43,6 +47,26 @@ export function consumo(s, vid, de = '0000', ate = '9999') {
   const litros = sum(ab.slice(1), (a) => +a.litros);
   return km > 0 && litros > 0 ? km / litros : null;
 }
+// Consumo pelas viagens com km rodado e litros lançados no acerto; sem elas, pelo tanque cheio
+export function consumoGeral(s, vid, de = '0000', ate = '9999') {
+  const vs = s.viagens.filter((v) => v.veiculoId === vid && +v.litros > 0 && kmViagem(v) > 0 && noPeriodo(dataViagem(v), de, ate));
+  const l = sum(vs, (v) => +v.litros);
+  return l > 0 ? sum(vs, kmViagem) / l : consumo(s, vid, de, ate);
+}
+
+// Resultado de uma viagem: frete − custos do acerto − abastecimentos e despesas ligados a ela − comissão
+export function resultadoViagem(s, v) {
+  const lig = (arr) => arr.filter((x) => x.viagemId === v.id);
+  const combustivel = (+v.combustivel || 0) + sum(lig(s.abastecimentos), (a) => +a.valor);
+  const litros = (+v.litros || 0) + sum(lig(s.abastecimentos), (a) => +a.litros || 0);
+  const despesas = despesasNaViagem(v) + sum(lig(s.despesas), (d) => +d.valor);
+  const r = { frete: +v.valorFrete || 0, combustivel, litros, despesas, comissao: comissao(v), km: kmViagem(v) };
+  r.custos = r.combustivel + r.despesas + r.comissao;
+  r.lucro = r.frete - r.custos;
+  r.margem = r.frete ? r.lucro / r.frete : 0;
+  r.kml = r.litros > 0 && r.km ? r.km / r.litros : 0;
+  return r;
+}
 
 // Resultado de um período, total e por veículo
 export function resultado(s, de, ate) {
@@ -54,8 +78,9 @@ export function resultado(s, de, ate) {
     const f = (arr) => (vid === undefined ? arr : arr.filter((x) => x.veiculoId === vid));
     const vs = f(viagens);
     const r = {
-      viagens: vs.length, faturamento: sum(vs, (v) => +v.valorFrete), km: sum(vs, kmViagem), litros: sum(f(abast), (a) => +a.litros),
-      combustivel: sum(f(abast), (a) => +a.valor), despesas: sum(f(desp), (d) => +d.valor), manutencao: sum(f(manut), (m) => +m.valor), comissoes: sum(vs, comissao),
+      viagens: vs.length, faturamento: sum(vs, (v) => +v.valorFrete), km: sum(vs, kmViagem), litros: sum(f(abast), (a) => +a.litros || 0) + sum(vs, (v) => +v.litros || 0),
+      combustivel: sum(f(abast), (a) => +a.valor) + sum(vs, (v) => +v.combustivel || 0), despesas: sum(f(desp), (d) => +d.valor) + sum(vs, despesasNaViagem),
+      manutencao: sum(f(manut), (m) => +m.valor), comissoes: sum(vs, comissao),
     };
     r.custos = r.combustivel + r.despesas + r.manutencao + r.comissoes;
     r.resultado = r.faturamento - r.custos;
