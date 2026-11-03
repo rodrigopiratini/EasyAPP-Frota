@@ -138,8 +138,8 @@ function vAcerto({ query }) {
   const ac = D.acerto(S(), A.store.meuRef(), de, ate);
   return A.tela('Meu acerto', `${A.pageHead('Meu acerto', `${nome} · ${date(de)} a ${date(ate)}`)}
     <div class="seg mb">${[['mes', 'Este mês'], ['ant', 'Mês passado']].map(([v, n]) => `<button class="${p === v ? 'on' : ''}" data-act="goto" data-h="#/acerto?p=${v}">${n}</button>`).join('')}</div>
-    <div class="card dark col"><div class="label">Saldo previsto</div><div class="grande">${money(ac.saldo)}</div><div class="small">${ac.saldo >= 0 ? 'a receber da empresa' : 'a devolver à empresa'} · valores confirmados no fechamento com a empresa</div></div>
-    <div class="grid g2 mt" style="gap:12px">${kpi('Comissões', money0(ac.comissoes), plural(ac.viagens.length, 'viagem', 'viagens'))}${kpi('Reembolsos', money0(ac.reembolsos), 'o que paguei')}${kpi('Adiantamentos', money0(ac.adiantamentos), 'já recebidos')}</div>
+    <div class="card dark col"><div class="label">Saldo previsto</div><div class="grande">${money(Math.abs(ac.saldo))}</div><div class="small">${ac.saldo >= 0 ? 'a receber da empresa' : 'a devolver à empresa'} · valores confirmados no fechamento com a empresa</div></div>
+    <div class="grid g2 mt" style="gap:12px">${kpi('Comissões', money0(ac.comissoes), plural(ac.viagens.length, 'viagem', 'viagens'))}${kpi('Reembolsos', money0(ac.reembolsos), 'o que paguei')}${kpi('Adiantamentos', money0(ac.adiantamentos), 'já recebidos')}${kpi('Frete comigo', money0(ac.emEspecie), 'dinheiro / carta frete')}</div>
     <div class="tiny muted mt">A comissão aparece quando a empresa informa o valor do frete da viagem.</div>`);
 }
 

@@ -16,6 +16,14 @@
 - Valores com máscara de R$; "preencha 2 de 3" (combustível, litros, preço por litro) na viagem e no abastecimento (`src/js/tres.js`).
 - Resultado, lucro e margem por viagem conferidos: batem com o módulo dele.
 
+## Fechamento da viagem e Painel (03/11/2026)
+- Viagens › **Fechar** (ou Fechamento dentro da viagem): como o frete foi recebido (PIX ao dono, carta frete, dinheiro com o motorista…; cada linha
+  diz com quem ficou), custos com "pago pelo motorista", comissão e o saldo: ficou com ele − pagou − comissão = devolve (ou recebe).
+  Relatório para conferência em PDF (abre numa janela; imprimir → salvar como PDF) e envio por WhatsApp. Cálculo em `dominio.js` (`fechamento`, `acerto`).
+- Painel: cartões e "Para onde vai o dinheiro" abrem o detalhamento/extrato (`abrirDetalhe`); gráficos de lucro por viagem, margem, motoristas, rotas, recebimentos e consumo.
+- Viagem: escolher o motorista puxa o caminhão e a comissão (e o caminhão puxa o motorista); dá para trocar. Botão de excluir na lista.
+- Login do motorista (código + PIN) precisa de **Anonymous sign-ins** ligado no projeto EasyAPP-Fábrica (Authentication › Sign In / Providers).
+
 ## Próximos passos
 - Avisar o Ducairo: ele entra em `/gestao/` com o mesmo e-mail e senha do Financial. Antes, conferir pelo painel (Apps da fábrica › 👁 ver).
 - Com ele: cadastrar os acessos (código + PIN) dos motoristas, o km atual de cada caminhão e os vencimentos.
