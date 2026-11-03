@@ -3,6 +3,6 @@
 // instaladas por supabase/instalar.sql. NUNCA coloque aqui a chave "service_role"/"secret".
 // Com os campos vazios, os apps funcionam só no modo demonstração (dados neste navegador).
 export const CONFIG = {
-  supabaseUrl: '',
-  supabaseKey: '',
+  supabaseUrl: 'https://sizbmkvzcqiukprdlxxr.supabase.co',
+  supabaseKey: 'sb_publishable_q_RZZb3Uoz5DTweHbSueTA_MsvHJmVj',
 };
