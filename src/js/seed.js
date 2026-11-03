@@ -1,9 +1,9 @@
-// Dados de demonstração (modo local / ?demo=1): uma pequena transportadora com ~6 meses de histórico.
+// Dados de demonstração (modo local / ?demo=1): uma pequena frota com ~6 meses de histórico.
 // seed({ vazio: true }) = começar do zero.
 import { today, addDays } from './core/fmt.js';
 
 export function seed({ vazio = false } = {}) {
-  const meta = { versao: 1, demo: !vazio, empresa: 'Transportes Serra Azul (demonstração)', pinGestao: '0000', cidade: 'Caxias do Sul/RS', precoDiesel: 6.19 };
+  const meta = { versao: 1, demo: !vazio, empresa: 'Frota Serra Azul (demonstração)', pinGestao: '0000', cidade: 'Caxias do Sul/RS', precoDiesel: 6.19 };
   const vazioTudo = { meta, veiculos: [], motoristas: [], clientes: [], viagens: [], abastecimentos: [], despesas: [], manutencoes: [], recebimentos: [], acessos: [] };
   if (vazio) return vazioTudo;
   const t = today();

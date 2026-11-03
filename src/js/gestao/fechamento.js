@@ -49,5 +49,5 @@ export function relatorio(s, v, nomeEmpresa, { paraMotorista = false } = {}) {
   ${v.fechadoEm ? `<p style="font-size:12px">Viagem fechada em ${date(v.fechadoEm)}.</p>` : ''}
   ${v.obsFechamento || v.obs ? `<p><b>Obs.:</b> ${esc(v.obsFechamento || v.obs)}</p>` : ''}
   <div class="sig"><div>${esc(mo?.nome || 'Motorista')}</div><div>${esc(nomeEmpresa || 'Empresa')}</div></div>
-  <p style="font-size:11px;color:#777;margin-top:24px">Gerado em ${date(today())} pelo EasyApp Frota.</p></body></html>`;
+  <p style="font-size:11px;color:#777;margin-top:24px">Gerado em ${date(today())} pelo EasyAPP Frota.</p></body></html>`;
 }

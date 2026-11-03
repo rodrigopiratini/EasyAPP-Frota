@@ -1,4 +1,4 @@
-# EasyApp Frota — instruções para o Claude
+# EasyAPP Frota — instruções para o Claude
 
 - App de segmento criado a partir do molde `easyapp-base` (veja `docs/FABRICA.md`).
   **Não edite o núcleo aqui** (`src/js/core/`, `supabase/base.sql`, `sw.js`, `.github/workflows/pages.yml`, `scripts/`):

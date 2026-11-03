@@ -1,11 +1,11 @@
-# EasyApp Frota
+# EasyAPP Frota
 
-Gestão de frota para **pequenas transportadoras**, em dois apps que funcionam no iPhone, Android e computador:
+Controle de frota (**EasyAPP Frota**), em dois apps que funcionam no iPhone, Android e computador:
 
 | App | Para quem | Caminho |
 |---|---|---|
-| **EasyApp Frota Gestão** | Dono da frota / escritório | `/gestao/` · demo: `/gestao/?demo=1` (PIN `0000`) |
-| **EasyApp Frota Motorista** | Motoristas | `/usuario/` · demo: `/usuario/?demo=1` (código `JOAO`, PIN `1234`) |
+| **EasyAPP Frota Gestão** | Administrador e gestores (escritório) | `/gestao/` · demo: `/gestao/?demo=1` (PIN `0000`) |
+| **EasyAPP Frota Motorista** | Motoristas | `/usuario/` · demo: `/usuario/?demo=1` (código `JOAO`, PIN `1234`) |
 
 ## O que faz
 - **Painel**: faturamento, custos, resultado e margem; custo e receita por km; resultado por caminhão; para onde vai o dinheiro; alertas.
@@ -16,7 +16,7 @@ Gestão de frota para **pequenas transportadoras**, em dois apps que funcionam n
 - **Veículos**: km atual automático, documentos com vencimento (licenciamento, seguro, tacógrafo, ANTT), manutenções, troca de óleo e revisão por km.
 - **Motoristas**: CNH com validade, comissão, **acerto** do período (comissões + reembolsos − adiantamentos) com envio pelo WhatsApp.
 - **Exportar** o período em CSV (para o contador ou planilha).
-- Várias transportadoras no mesmo sistema, cada uma só vê os próprios dados; teste grátis de 30 dias e assinatura.
+- Várias empresas no mesmo sistema, cada uma só vê os próprios dados; teste grátis de 30 dias e assinatura.
 
 Feito a partir do molde [`easyapp-base`](https://github.com/rodrigopiratini/easyapp-base) (veja `docs/FABRICA.md`).
 Colocar no ar: [`docs/INSTALACAO.md`](docs/INSTALACAO.md) · Proposta comercial: [`docs/PROPOSTA.md`](docs/PROPOSTA.md).

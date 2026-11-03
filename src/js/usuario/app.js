@@ -1,4 +1,4 @@
-// EasyApp Frota — app do Motorista (celular)
+// EasyAPP Frota — app do Motorista (celular)
 import { criarApp } from '../core/app.js';
 import { formHTML, lerCampos } from '../core/form.js';
 import * as D from '../dominio.js';

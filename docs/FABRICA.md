@@ -11,6 +11,7 @@ e dentro da pasta atendem todas as empresas daquele segmento.
 | Várias empresas no mesmo banco, cada uma isolada | `supabase/base.sql` |
 | Cadastro livre do dono com período de teste, convite de gestores, login do usuário por código + PIN | `src/js/core/app.js` |
 | Assinatura: teste / ativa / suspensa, bloqueio de gravações quando vence, painel **Plataforma** | `base.sql` + `core/app.js` |
+| **Suporte**: o administrador abre a empresa de um cliente no próprio app (Plataforma › Ver / Corrigir), com verificação em duas etapas, por 2 horas | `base.sql` (`suporte_visitas`) + `core/app.js` |
 | Registro de atividades (quem fez o quê) | `base.sql` + `core/app.js` |
 | Sincronização em tempo real e fila offline | `src/js/core/cloud.js`, `store.js` |
 | Modo demonstração com dados fictícios (`?demo=1`) | `src/js/seed.js` |
@@ -18,6 +19,14 @@ e dentro da pasta atendem todas as empresas daquele segmento.
 | Componentes (cartões, KPIs, gráficos, modais, WhatsApp, CSV, impressão) | `src/js/core/ui.js`, `charts.js` |
 | Publicação automática + aviso "Nova versão · Atualizar" | `.github/workflows/pages.yml` |
 | **Assistente (IA)** ✦ no topo e botão **+** com as ações de cada tela | `src/js/core/assistente.js` + função `supabase/functions/assistente` |
+
+## Níveis de acesso (iguais em todos os apps)
+| Nível | Quem | Como entra | O que pode |
+|---|---|---|---|
+| **Desenvolvedor** | quem cuida da fábrica (`<pasta>.plataforma_admins`) | e-mail na Gestão › Plataforma | todas as empresas: assinatura, convite de administrador, **Ver / Corrigir** (2 h, com verificação em duas etapas) |
+| **Administrador** | o dono da empresa cliente (papel `dono`) | e-mail na Gestão | tudo da empresa; convida e remove gestores; vê o registro de atividades |
+| **Gestor** | alguém delegado pelo Administrador (papel `gestor`) | e-mail na Gestão, por convite | toda a Gestão, sem convidar/remover pessoas nem ver o registro |
+| **Usuário** | o pessoal de ponta: motorista, parceiro, técnico (papel `usuario`) | código + PIN no app de campo | só o que é dele (regras das coleções) |
 
 ## O que cada segmento escreve
 1. `src/js/segmento.js`: nome, cores do ícone, planos, quem é o usuário (motorista, parceiro, técnico) e as **coleções** com as regras de acesso.

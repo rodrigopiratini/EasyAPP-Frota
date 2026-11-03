@@ -1,4 +1,4 @@
--- Regras específicas do EasyApp Frota.
+-- Regras específicas do EasyAPP Frota.
 -- As coleções e regras de acesso ficam em src/js/segmento.js (o gerar.mjs grava na tabela colecoes).
 
 -- Motorista: viagem lançada por ele fica com o próprio motoristaId e começa sem valores financeiros

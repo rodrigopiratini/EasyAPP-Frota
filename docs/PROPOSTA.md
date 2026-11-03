@@ -1,4 +1,4 @@
-# EasyApp Frota — proposta
+# EasyAPP Frota — proposta
 
 **Para quem:** donos de 2 a 30 caminhões que hoje controlam viagens, diesel e acertos em caderno, planilha ou WhatsApp.
 
@@ -8,7 +8,7 @@
 - O **acerto do motorista** (comissão, adiantamento, o que ele pagou do bolso) vira discussão.
 - Documento vencido (licenciamento, seguro, tacógrafo, CNH) e troca de óleo atrasada aparecem quando já deram problema.
 
-## O que o EasyApp Frota entrega
+## O que o EasyAPP Frota entrega
 1. O motorista lança tudo **na hora**, no celular, em 3 toques: iniciar viagem, abastecer, despesa, cheguei.
 2. O dono confere numa tela só e vê o **resultado por caminhão e por km**.
 3. **Acerto do motorista** pronto, enviado pelo WhatsApp.
@@ -23,7 +23,7 @@
 | Frota 30 | até 30 | R$ 399 |
 
 - **30 dias grátis**, sem cartão. **Implantação opcional** (cadastro de veículos, motoristas e histórico; treinamento): R$ 490.
-- **Indicação**: cada transportadora indicada que assinar = 1 mês grátis para quem indicou.
+- **Indicação**: cada empresa indicada que assinar = 1 mês grátis para quem indicou.
 - Clientes de lançamento: 50% de desconto nos 6 primeiros meses em troca de opinião e indicações.
 
 ## Roteiro (próximas versões)

@@ -2,7 +2,7 @@
   "id": "easyapp-frota-gestao",
   "name": "EasyAPP Frota Gestão",
   "short_name": "EasyAPP Frota",
-  "description": "Para o dono da frota: resultado por caminhão, viagens, combustível, despesas, manutenção e acerto dos motoristas.",
+  "description": "Para o escritório da frota: resultado por caminhão, viagens, combustível, despesas, manutenção e acerto dos motoristas.",
   "lang": "pt-BR",
   "start_url": "./",
   "scope": "./",

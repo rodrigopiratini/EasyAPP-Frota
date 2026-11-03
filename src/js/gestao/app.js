@@ -1,4 +1,4 @@
-// EasyApp Frota — app de Gestão (dono da frota)
+// EasyAPP Frota — app de Gestão (administrador e gestores da frota)
 import { criarApp } from '../core/app.js';
 import { editar } from '../core/form.js';
 import * as D from '../dominio.js';

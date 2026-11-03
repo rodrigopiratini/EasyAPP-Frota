@@ -18,7 +18,10 @@ import { CONFIG } from '../config.js';
 // Segmento sem app de campo (só Gestão): SEGMENTO.usuario = null
 const TEM_USUARIO = !!SEGMENTO.usuario;
 const U = SEGMENTO.usuario || { papel: 'Usuário', papelPlural: 'Usuários', curto: 'Usuário', nome: '', colecao: null };
-const PAPEL = { dono: 'Dono', gestor: 'Gestor', usuario: U.papel };
+// Níveis: Desenvolvedor (quem cuida da fábrica: plataforma_admins; abre empresas pela Plataforma › Ver / Corrigir),
+// Administrador (o dono da empresa; papel 'dono' no banco), Gestor (delegado pelo Administrador; papel 'gestor')
+// e Usuário (o pessoal de ponta, no app de campo com código + PIN: motorista, parceiro…; papel 'usuario')
+const PAPEL = { dono: 'Administrador', gestor: 'Gestor', usuario: U.papel && U.papel !== 'Usuário' ? `Usuário (${U.papel})` : 'Usuário', suporte: 'Desenvolvedor' };
 
 export function criarApp(def) {
   const tipo = def.tipo; // 'gestao' | 'usuario'
@@ -43,7 +46,7 @@ export function criarApp(def) {
     demo: store.modo === 'local', url: CONFIG.supabaseUrl, chave: CONFIG.supabaseKey, token: store.token,
     get: () => visivel(), commit: (fn, msg) => store.commit(fn, msg), toast,
     colecoes: () => {
-      const leitura = !!(store.empresa() && !store.empresa().liberada) || store.suporte()?.modo === 'leitura';
+      const leitura = !!(store.empresa() && !store.empresa().liberada) || store.suporte()?.modo === 'leitura' || (!gestao && !!store.espelho);
       return Object.fromEntries(Object.entries(SEGMENTO.colecoes).filter(([, c]) => gestao || (c.leitura || 'gestao') !== 'gestao')
         .map(([k, c]) => [k, { nome: c.nome || k, escrita: !leitura && (gestao || c.escrita === 'proprio') }]));
     },
@@ -66,7 +69,7 @@ export function criarApp(def) {
   // o que o usuário enxerga (na nuvem o banco já filtrou; na demonstração o aparelho tem tudo)
   function visivel() {
     const s = S();
-    if (gestao || store.modo === 'nuvem' || !s) return s;
+    if (gestao || (store.modo === 'nuvem' && !store.espelho) || !s) return s;
     const ref = store.meuRef(), out = { ...s };
     for (const [k, c] of Object.entries(SEGMENTO.colecoes)) {
       const l = c.leitura || 'gestao';
@@ -113,7 +116,14 @@ export function criarApp(def) {
   function avisoSuporte() {
     const sp = store.suporte();
     if (!sp) return '';
-    return `<div class="aviso ${sp.modo === 'edicao' ? 'crit' : ''}">${icon('shield')}<span class="grow"><b>Modo suporte</b> · ${esc(sp.nome || '')} · ${sp.modo === 'edicao' ? 'leitura e edição: o que você mudar fica na conta do cliente' : 'só leitura'}</span></div>`;
+    const ate = sp.ate ? new Date(sp.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    return `<div class="aviso ${sp.modo === 'edicao' ? 'crit' : ''}">${icon('shield')}<span class="grow"><b>Suporte</b> · ${esc(sp.nome || '')} · ${sp.modo === 'edicao' ? 'ver e corrigir: o que você mudar fica na conta do cliente' : 'só ver'}${ate ? ` · até ${ate}` : ''}</span>
+      ${gestao ? '<a href="#/plataforma" class="btn sm ghost">Trocar</a>' : ''}<button class="btn sm" data-act="sairSuporte">Sair</button></div>`;
+  }
+  // gestão vendo o app de um usuário (?ver=<ref>)
+  function avisoEspelho() {
+    if (gestao || !store.espelho) return '';
+    return `<div class="aviso">${icon('info')}<span class="grow">Você está vendo o app de <b>${esc(def.nomeUsuario?.(S()) || U.papel)}</b> como ele vê, em tempo real. <b>Somente leitura.</b></span><button class="btn sm" data-act="fecharEspelho">Fechar</button></div>`;
   }
   function avisoAssinatura() {
     const e = store.empresa();
@@ -146,7 +156,7 @@ export function criarApp(def) {
         <header class="topbar">${back ? `<button data-act="back" aria-label="Voltar">${icon('arrowL')}</button><div class="t ellipsis">${title}</div>`
           : SEGMENTO.logo ? `<span style="display:grid;place-items:center">${icon(SEGMENTO.icone || 'home')}</span><div class="t ellipsis">${title}</div>`
           : `<div class="ea-marca t">${barras}${nomeMarca}</div>`}${def.topoDireita?.(s) || ''}${btIA}</header>
-        <main class="main">${avisoSuporte()}${avisoAssinatura()}${store.modo === 'local' ? `<div class="demo-banner">${icon('info')}<span class="grow">Demonstração com dados fictícios, salvos só neste navegador.</span></div>` : ''}${bannerInstalar()}${content}</main>
+        <main class="main">${avisoSuporte()}${avisoEspelho()}${avisoAssinatura()}${store.modo === 'local' ? `<div class="demo-banner">${icon('info')}<span class="grow">Demonstração com dados fictícios, salvos só neste navegador.</span></div>` : ''}${bannerInstalar()}${content}</main>
       </div>
       <nav class="tabbar">${tabs().map(([h, ic, n]) => `<a href="${h}" class="${isOn(h) ? 'on' : ''}">${icon(ic)}<span>${n}</span>${b(h)}</a>`).join('')}</nav>
       ${temMais() ? '<button class="eai-fab" data-act="eaiMais" aria-label="Ações e assistente">+</button>' : ''}
@@ -169,10 +179,10 @@ export function criarApp(def) {
     const p = store.perfil();
     if (telaLogin === 'empresa' || (p && !p.empresaId)) return caixa(SEGMENTO.gestao.curto, `
       <div class="small center">Conta <b>${esc(p?.email || '')}</b> conectada. Falta ligar a uma empresa:</div>
-      <div class="card col"><b>Sou o dono</b><div class="small muted">Crie sua empresa e use grátis por ${SEGMENTO.diasTeste || 30} dias.</div>
+      <div class="card col"><b>Sou o administrador (dono da empresa)</b><div class="small muted">Crie sua empresa e use grátis por ${SEGMENTO.diasTeste || 30} dias.</div>
         <label class="field"><span>Nome da empresa</span><input class="input" name="empresa" autocomplete="organization"></label><button class="btn block" data-act="criarEmpresa">Criar minha empresa</button></div>
       <div class="card col"><b>Recebi um convite</b><label class="field"><span>Código do convite</span><input class="input" name="convite" autocapitalize="characters" style="text-transform:uppercase"></label><button class="btn ghost block" data-act="usarConvite">Entrar com convite</button></div>
-      ${p?.admin ? '<a class="btn ghost block" href="#/plataforma" data-act="abrirPlataforma">Abrir painel da plataforma</a>' : ''}
+      ${p?.admin ? '<a class="btn ghost block" href="#/plataforma" data-act="abrirPlataforma">Plataforma: abrir a empresa de um cliente</a>' : ''}
       <a href="#" class="small center" data-act="logout">Usar outra conta</a>`, 'nada');
     const novo = telaLogin === 'novo';
     return caixa(SEGMENTO.gestao.curto, `
@@ -194,8 +204,10 @@ export function criarApp(def) {
 
   // ---------- Configurações (gestão) ----------
   const linkUsuario = () => new URL('../usuario/' + (store.modo === 'local' ? '?demo=1' : ''), location.href).href;
+  // abrir o app de campo de um usuário como ele vê (só leitura)
+  const linkVer = (ref) => { const u = new URL('../usuario/', location.href); u.searchParams.set('ver', ref); if (store.modo === 'local') u.searchParams.set('demo', '1'); return u.href; };
   const msgAcesso = (a, doc) => `Olá${doc?.nome ? ', ' + String(doc.nome).split(' ')[0] : ''}! Este é o app ${SEGMENTO.usuario.nome} da ${store.empresa()?.nome || S().meta.empresa || ''}:\n${linkUsuario()}\n\nCódigo: ${a.codigo}\nPIN: ${a.pin}\n\nPara instalar como app:\n• iPhone: abra o link no Safari › Compartilhar › Adicionar à Tela de Início\n• Android: abra no Chrome › menu ⋮ › Instalar app`;
-  const msgConvite = (codigo) => `Convite para a ${SEGMENTO.gestao.nome} (${store.empresa()?.nome || ''}):\n${new URL('../gestao/', location.href).href}\n\n1. Toque em "Criar conta" e use seu e-mail\n2. Depois toque em "Entrar com convite"\n3. Código: ${codigo}\n\nO convite vale por 7 dias e pode ser usado uma única vez.`;
+  const msgConvite = (codigo, empresa = store.empresa()?.nome || '', dono = false) => `Convite${dono ? ' de administrador' : ''} para a ${SEGMENTO.gestao.nome} (${empresa}):\n${new URL('../gestao/', location.href).href}\n\n1. Toque em "Criar conta" e use seu e-mail\n2. Depois toque em "Entrar com convite"\n3. Código: ${codigo}\n\nO convite vale por 7 dias e pode ser usado uma única vez.`;
 
   async function pintarAcessos() {
     const el = document.getElementById('ea-acessos');
@@ -207,7 +219,7 @@ export function criarApp(def) {
         const a = lista.find((x) => x.ref === d.id);
         return `<div class="li ${a && !a.ativo ? 'off' : ''}"><div class="avatar">${esc(iniciais(d.nome || '?'))}</div><div class="grow"><div class="t">${esc(d.nome || '—')}</div>
           <div class="s">${a ? `Código <b>${esc(a.codigo)}</b> · PIN <b>${esc(a.pin)}</b>${a.ativo ? '' : ' · bloqueado'}` : 'Sem acesso ao app'}</div></div>
-          <div class="row gap-s wrap" style="justify-content:flex-end">${a ? `<a class="btn ghost sm" target="_blank" rel="noopener" href="${waLink(d.telefone, msgAcesso(a, d))}">${icon('whatsapp')}</a><button class="btn ghost sm" data-act="copiarAcesso" data-ref="${d.id}">Copiar</button><button class="btn ghost sm" data-act="trocarPin" data-ref="${d.id}">Novo PIN</button><button class="btn ghost sm" data-act="bloquearAcesso" data-ref="${d.id}" data-v="${a.ativo ? 0 : 1}">${a.ativo ? 'Bloquear' : 'Liberar'}</button>`
+          <div class="row gap-s wrap" style="justify-content:flex-end">${a ? `<a class="btn ghost sm" target="_blank" rel="noopener" href="${waLink(d.telefone, msgAcesso(a, d))}">${icon('whatsapp')}</a><button class="btn ghost sm" data-act="copiarAcesso" data-ref="${d.id}">Copiar</button><a class="btn ghost sm" target="_blank" rel="noopener" href="${linkVer(d.id)}" title="Ver o app como ele vê">Ver app</a><button class="btn ghost sm" data-act="trocarPin" data-ref="${d.id}">Novo PIN</button><button class="btn ghost sm" data-act="bloquearAcesso" data-ref="${d.id}" data-v="${a.ativo ? 0 : 1}">${a.ativo ? 'Bloquear' : 'Liberar'}</button>`
             : `<button class="btn sm" data-act="criarAcesso" data-ref="${d.id}">${icon('plus')} Gerar acesso</button>`}</div></div>`;
       }).join('')}</div>` : empty(`Cadastre ${U.papelPlural.toLowerCase()} para gerar os acessos ao app.`, 'users');
       el._lista = lista;
@@ -256,8 +268,8 @@ export function criarApp(def) {
             ${campos.map(([k, label, ph = '']) => `<label class="field"><span>${label}</span><input class="input" name="${k}" value="${esc(s.meta[k] || '')}" placeholder="${esc(ph)}"></label>`).join('')}
             ${nuvem ? '' : `<label class="field"><span>PIN da gestão (demonstração)</span><input class="input" name="pinGestao" inputmode="numeric" maxlength="4" value="${esc(s.meta.pinGestao || '0000')}"></label>`}
             <button class="btn">Salvar</button></form></div>
-          ${nuvem ? `<div class="card col"><h2>Equipe de gestão</h2><div id="ea-equipe" class="small muted">Carregando…</div>
-            ${store.ehDono() ? `<button class="btn ghost" data-act="convidar">${icon('plus')} Convidar gestor (sócio, escritório)</button><div class="tiny muted">O convidado acessa toda a Gestão, mas não convida nem remove pessoas.</div>` : '<div class="tiny muted">Somente o dono convida ou remove gestores.</div>'}</div>` : ''}
+          ${nuvem ? `<div class="card col"><h2>Pessoas na Gestão</h2><div id="ea-equipe" class="small muted">Carregando…</div>
+            ${store.ehDono() ? `<button class="btn ghost" data-act="convidar">${icon('plus')} Convidar gestor (sócio, escritório)</button><div class="tiny muted">O gestor acessa toda a Gestão, mas não convida nem remove pessoas e não vê o registro de atividades.</div>` : '<div class="tiny muted">Somente o administrador convida ou remove gestores.</div>'}</div>` : ''}
           <div class="card col"><h2>Dados</h2>
             ${nuvem ? `<div class="small ink2">${icon('check')} Conectado à nuvem. Os dados ficam disponíveis em qualquer aparelho, em tempo real. Seu acesso: <b>${PAPEL[store.perfil()?.papel] || ''}</b>.</div>
               <div class="row wrap"><button class="btn ghost" data-act="backup">${icon('download')} Exportar backup</button><button class="btn ghost" data-act="install">${icon('download')} Instalar app</button><a class="btn ghost" href="?demo=1" target="_blank" rel="noopener">${icon('spark')} Demonstração</a></div>`
@@ -269,13 +281,15 @@ export function criarApp(def) {
       </div>`);
   }
 
-  // ---------- Registro de atividades (somente o dono) ----------
+  // ---------- Registro de atividades (somente o administrador) ----------
   const atv = { chave: null, dados: null, erro: null };
   const ACAO = { insert: 'criou', update: 'alterou', delete: 'apagou' };
   const nomeColecao = (c) => SEGMENTO.colecoes[c]?.nome || { config: 'Configurações', acessos: 'Acessos', perfis: 'Perfis' }[c] || c;
   const nomeCampo = (k) => SEGMENTO.campos?.[k] || k;
   function descrever(x) {
-    if (x.acao === 'acesso') return 'entrou no app';
+    const proprio = def.descreverAtividade?.(x, S());   // o segmento pode descrever do jeito dele (texto em HTML)
+    if (proprio) return proprio;
+    if (x.acao === 'acesso') return x.papel === 'suporte' ? `abriu a empresa pelo suporte${x.depois?.modo ? ` (${x.depois.modo === 'edicao' ? 'ver e corrigir' : 'só ver'})` : ''}` : 'entrou no app';
     const doc = S()[x.colecao]?.find((d) => d.id === x.registro) || x.depois || x.antes || {};
     const nome = doc.nome || doc.titulo || doc.descricao || doc.placa || '';
     const campos = x.acao === 'update' ? Object.keys(x.depois || {}).filter((k) => !['atualizadoEm', 'updatedAt'].includes(k)) : [];
@@ -302,16 +316,65 @@ export function criarApp(def) {
   }
   function vAtividade({ query }) {
     const p = query.p || '7d';
-    return tela('Atividade', `${pageHead('Registro de atividades', 'Quem fez o quê, em qualquer aparelho. Só o dono vê.', busca('Buscar pessoa…'))}
+    return tela('Atividade', `${pageHead('Registro de atividades', 'Quem fez o quê, em qualquer aparelho. Só o administrador vê.', busca('Buscar pessoa…'))}
       <div class="seg mb">${[['hoje', 'Hoje'], ['7d', '7 dias'], ['30d', '30 dias'], ['tudo', 'Tudo']].map(([v, n]) => `<button class="${p === v ? 'on' : ''}" data-act="goto" data-h="#/atividade?p=${v}${query.u ? '&u=' + query.u : ''}">${n}</button>`).join('')}${query.u ? '<button data-act="goto" data-h="#/atividade">Todas as pessoas ✕</button>' : ''}</div>
       <div id="ea-atividade"></div>`);
   }
 
-  // ---------- Plataforma (administrador da fábrica) ----------
+  // ---------- Plataforma (desenvolvedor da fábrica) ----------
   const plat = { dados: null, erro: null };
   async function carregarPlataforma() {
     try { plat.dados = await store.rpc('plataforma_empresas'); plat.erro = null; } catch (e) { plat.erro = e.message; }
     pintarPlataforma();
+    // vindo do painel de gestão: #/plataforma?abrir=<empresa>
+    const pedida = current.pattern === '/plataforma' && current.params?.query?.abrir;
+    if (pedida && plat.dados?.some((e) => e.id === pedida)) { history.replaceState(null, '', location.pathname + location.search + '#/plataforma'); escolherModo(pedida); }
+  }
+  function escolherModo(id) {
+    const e = plat.dados.find((x) => x.id === id);
+    modal({ title: `Abrir ${esc(e.nome)}`, body: `<p class="small">O app mostra a empresa como o administrador dela vê, por 2 horas. A abertura fica no registro de atividades da empresa.</p>`,
+      foot: `<button class="btn ghost" data-act="v">Só ver</button><button class="btn" data-act="c">Ver e corrigir</button>`,
+      handlers: { v: () => { closeModal(); abrirEmpresa(id, 'leitura'); }, c: () => { closeModal(); abrirEmpresa(id, 'edicao'); } } });
+  }
+  // Verificação em duas etapas: o banco só abre empresas de clientes com ela confirmada nesta sessão
+  function pedirCodigo(factorId, texto) {
+    return new Promise((res) => {
+      let feito = false;
+      modal({ title: 'Verificação em duas etapas', body: `<form id="fmfa" class="col" data-onsubmit="ok">${texto}
+        <label class="field"><span>Código de 6 dígitos</span><input class="input" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="8" style="font-size:22px;letter-spacing:.3em;text-align:center" required></label></form>`,
+        foot: '<button class="btn ghost" data-act="close">Cancelar</button><button class="btn" data-act="ok">Confirmar</button>',
+        onMount: (m) => m.querySelector('[name=codigo]').focus(),
+        handlers: { ok: async () => {
+          const c = document.querySelector('#fmfa [name=codigo]').value;
+          const b = document.querySelector('.overlay [data-act=ok]');
+          if (b) b.disabled = true;
+          try { await store.mfa.confirmar(factorId, c); feito = true; closeModal(); res(true); } catch (err) { toast(err.message); if (b) b.disabled = false; }
+        } } });
+      const fechou = new MutationObserver(() => { if (!document.getElementById('fmfa')) { fechou.disconnect(); if (!feito) res(false); } });
+      fechou.observe(document.body, { childList: true });
+    });
+  }
+  async function garantirMfa() {
+    if ((await store.mfa.nivel()) === 'aal2') return true;
+    const f = await store.mfa.fator();
+    if (f) return pedirCodigo(f.id, '<p class="small">Digite o código que aparece no seu app autenticador.</p>');
+    const n = await store.mfa.cadastrar();
+    return pedirCodigo(n.id, `<p class="small">Para abrir empresas de clientes é preciso a verificação em duas etapas (configura uma vez; vale para todos os apps da fábrica). Leia o QR code com um app autenticador (Google Authenticator, Microsoft Authenticator, 1Password…) e digite o código.</p>
+      <div class="center"><img src="${n.qr}" alt="QR code" width="190" height="190" style="background:#fff;padding:8px;border-radius:12px"></div>
+      <div class="tiny muted center">Sem câmera? Digite a chave no app: <code style="user-select:all;word-break:break-all">${esc(n.segredo)}</code></div>`);
+  }
+  async function abrirEmpresa(id, modo) {
+    const e = plat.dados?.find((x) => x.id === id);
+    if (modo === 'edicao' && !(await confirmar(`Abrir ${esc(e?.nome || 'a empresa')} para ver e corrigir? O que você mudar fica na conta do cliente.`, { ok: 'Abrir' }))) return;
+    try {
+      if (!(await garantirMfa())) return;
+      const ok = await store.abrirEmpresa(id, modo);
+      if (!ok) throw new Error('não consegui abrir a empresa');
+      ia?.limpar();
+      await def.aposEntrar?.();
+      toast(`${e?.nome || 'Empresa'} aberta ${modo === 'edicao' ? 'para ver e corrigir' : 'só para ver'}`);
+      location.hash = INICIO; go();
+    } catch (err) { toast(/MFA/.test(err.message) ? 'Confirme a verificação em duas etapas' : err.message); }
   }
   const SIT = { teste: ['Teste', 'info'], ativa: ['Ativa', 'ok'], suspensa: ['Suspensa', 'crit'], cancelada: ['Cancelada', ''] };
   function pintarPlataforma() {
@@ -322,12 +385,13 @@ export function criarApp(def) {
     const es = plat.dados;
     const ativas = es.filter((e) => e.situacao === 'ativa');
     const mrr = ativas.reduce((a, e) => a + (+e.valorMensal || 0), 0);
-    el.innerHTML = `<div class="grid g4">${kpi('Empresas', int(es.length), `${es.filter((e) => e.situacao === 'teste').length} em teste`)}${kpi('Pagantes', int(ativas.length), `${es.filter((e) => !e.liberada).length} bloqueadas`)}${kpi('Receita mensal', money0(mrr), 'soma das ativas')}${kpi('Usuários de campo', int(es.reduce((a, e) => a + e.usuarios, 0)), 'acessos ativos')}</div>
-      <div class="card pad-0 mt"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Empresa</th><th>Situação</th><th class="hide-m">Dono</th><th class="r">Usuários</th><th class="r hide-m">Registros</th><th class="hide-m">Último uso</th><th>Vence</th></tr></thead>
-      <tbody>${es.map((e) => `<tr class="click" data-act="editarEmpresa" data-id="${e.id}" data-busca="${esc(e.nome + ' ' + (e.dono || ''))}"><td><b>${esc(e.nome)}</b><div class="tiny muted">${esc(e.plano)}${e.valorMensal ? ' · ' + money0(e.valorMensal) : ''}</div></td><td>${badge(SIT[e.situacao]?.[0] || e.situacao, e.liberada ? SIT[e.situacao]?.[1] : 'crit')}</td><td class="hide-m small">${esc(e.dono || '—')}</td><td class="r">${int(e.usuarios)}</td><td class="r hide-m">${int(e.registros)}</td><td class="hide-m small">${e.ultimoUso ? date(e.ultimoUso.slice(0, 10)) : '—'}</td><td class="small">${date(e.situacao === 'teste' ? e.testeAte : e.pagoAte)}</td></tr>`).join('') || `<tr><td colspan="7">${empty('Nenhuma empresa cadastrada ainda.')}</td></tr>`}</tbody></table></div></div>`;
+    el.innerHTML = `<div class="grid g4">${kpi('Empresas', int(es.length), `${es.filter((e) => e.situacao === 'teste').length} em teste`)}${kpi('Pagantes', int(ativas.length), `${es.filter((e) => !e.liberada).length} bloqueadas`)}${kpi('Receita mensal', money0(mrr), 'soma das ativas')}${kpi('Usuários (app de campo)', int(es.reduce((a, e) => a + e.usuarios, 0)), 'acessos ativos')}</div>
+      <div class="card pad-0 mt"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Empresa</th><th>Situação</th><th class="hide-m">Administrador</th><th class="r">Usuários</th><th class="r hide-m">Registros</th><th class="hide-m">Último uso</th><th>Vence</th><th class="r">Abrir</th></tr></thead>
+      <tbody>${es.map((e) => `<tr class="click" data-act="editarEmpresa" data-id="${e.id}" data-busca="${esc(e.nome + ' ' + (e.dono || ''))}"><td><b>${esc(e.nome)}</b><div class="tiny muted">${esc(e.plano)}${e.valorMensal ? ' · ' + money0(e.valorMensal) : ''}</div></td><td>${badge(SIT[e.situacao]?.[0] || e.situacao, e.liberada ? SIT[e.situacao]?.[1] : 'crit')}</td><td class="hide-m small">${esc(e.dono || '—')}</td><td class="r">${int(e.usuarios)}</td><td class="r hide-m">${int(e.registros)}</td><td class="hide-m small">${e.ultimoUso ? date(e.ultimoUso.slice(0, 10)) : '—'}</td><td class="small">${date(e.situacao === 'teste' ? e.testeAte : e.pagoAte)}</td>
+        <td class="r" style="white-space:nowrap"><button class="btn sm ghost" data-act="abrirEmpresa" data-id="${e.id}" data-modo="leitura" title="Abrir só para ver">Ver</button> <button class="btn sm ghost" data-act="abrirEmpresa" data-id="${e.id}" data-modo="edicao" title="Abrir para ver e corrigir">Corrigir</button></td></tr>`).join('') || `<tr><td colspan="8">${empty('Nenhuma empresa cadastrada ainda.')}</td></tr>`}</tbody></table></div></div>`;
   }
   function vPlataforma() {
-    const html = `${pageHead('Plataforma', `Empresas que usam o ${esc(SEGMENTO.nome)}: situação, vencimento e uso.`, busca('Buscar empresa…') + `<button class="btn ghost" data-act="recarregarPlataforma">${icon('refresh')}</button>`)}<div id="ea-plataforma"></div>`;
+    const html = `${pageHead('Plataforma', `Empresas que usam o ${esc(SEGMENTO.nome)}: situação, vencimento e uso. <b>Ver</b> e <b>Corrigir</b> abrem a empresa aqui no app, como o administrador dela vê, por 2 horas (fica no registro de atividades dela).`, busca('Buscar empresa…') + `<button class="btn ghost" data-act="recarregarPlataforma">${icon('refresh')}</button>`)}<div id="ea-plataforma"></div>`;
     return S() ? tela('Plataforma', html) : `<main class="main" style="margin:0 auto">${html}<div class="mt"><a href="#" data-act="logout">Sair</a></div></main>`;
   }
   function modalEmpresa(id) {
@@ -339,9 +403,15 @@ export function criarApp(def) {
       <label class="field"><span>Pago até</span><input class="input" type="date" name="pagoAte" value="${e.pagoAte || ''}"></label>
       <label class="field"><span>Valor mensal</span>${moneyInput('valor', e.valorMensal || 0)}</label></div>
       <label class="field"><span>Observações</span><textarea class="input" name="obs">${esc(e.obs || '')}</textarea></label>
-      <div class="tiny muted">Dono: ${esc(e.dono || '—')} · criada em ${date(e.criadoEm.slice(0, 10))} · ${int(e.gestores)} gestor(es), ${int(e.usuarios)} usuário(s), ${int(e.registros)} registros. Ativa com "pago até" vencido há mais de 5 dias bloqueia as gravações.</div></form>`,
-      foot: `<button class="btn ghost" data-act="close">Cancelar</button><button class="btn" data-act="ok">Salvar</button>`,
-      handlers: { ok: async () => {
+      <div class="tiny muted">Administrador: ${esc(e.dono || '—')} · criada em ${date(e.criadoEm.slice(0, 10))} · ${int(e.gestores)} na Gestão (administrador e gestores), ${int(e.usuarios)} usuários no app de campo, ${int(e.registros)} registros. Ativa com "pago até" vencido há mais de 5 dias bloqueia as gravações.</div></form>`,
+      foot: `<button class="btn ghost" data-act="conviteDono" style="margin-right:auto">${icon('plus')} Convite de administrador</button><button class="btn ghost" data-act="close">Cancelar</button><button class="btn" data-act="ok">Salvar</button>`,
+      handlers: { conviteDono: async () => {
+        try {
+          const c = await store.rpc('plataforma_convite_dono', { p_empresa: id });
+          modal({ title: 'Convite de administrador', body: `<div class="col"><div class="small">Quem usar este convite vira <b>administrador</b> (dono) de ${esc(e.nome)}. Vale 7 dias, uma vez só.</div><div class="grande center">${esc(c)}</div>
+            <a class="btn" target="_blank" rel="noopener" href="${waLink('', msgConvite(c, e.nome, true))}">${icon('whatsapp')} Enviar pelo WhatsApp</a></div>` });
+        } catch (err) { toast(err.message); }
+      }, ok: async () => {
         const f = lerForm('fpl');
         try {
           await store.rpc('plataforma_atualizar', { p_empresa: id, p_situacao: f.situacao, p_plano: f.plano, p_teste_ate: f.testeAte || null, p_pago_ate: f.pagoAte || null, p_valor: parseMoney(f.valor) || null, p_obs: f.obs });
@@ -370,14 +440,17 @@ export function criarApp(def) {
   const ROTAS = [...def.rotas, ['/mais', vMais], ...(gestao ? [['/config', vConfig], ['/atividade', vAtividade], ['/plataforma', vPlataforma]] : [['/conta', vConta]])];
   function logado() {
     if (!S() || !store.perfil()) return false;
+    if (!gestao && store.espelho) return store.modo === 'local' || store.ehGestao();
     return gestao ? store.ehGestao() : store.perfil()?.papel === 'usuario' && !!store.meuRef();
   }
   function render(view, params, pattern) {
     current = { view, params, pattern };
     resetCharts();
     const ok = logado();
+    // desenvolvedor sem empresa (o normal): vai direto para a Plataforma
+    if (gestao && !ok && store.ehAdmin() && pattern !== '/plataforma' && store.modo === 'nuvem') { location.hash = '#/plataforma'; return; }
     const adminSolto = gestao && pattern === '/plataforma' && store.ehAdmin();
-    store.setSomenteLeitura(!!(ok && ((store.empresa() && !store.empresa().liberada) || store.suporte()?.modo === 'leitura')));
+    store.setSomenteLeitura(!!(ok && ((store.empresa() && !store.empresa().liberada) || store.suporte()?.modo === 'leitura' || (!gestao && store.espelho))));
     root.innerHTML = ok || adminSolto ? view(params) : gestao ? vLoginGestao() : vLoginUsuario();
     if (ok && buscas[pattern]) filtrarBusca(root, buscas[pattern]);
     if (ok && pattern === '/config') { pintarAcessos(); if (store.modo === 'nuvem') pintarEquipe(); }
@@ -405,7 +478,9 @@ export function criarApp(def) {
     atualizarApp: () => verificarAtualizacao(true),
     eaiAbrir: () => ia?.abrir(),
     eaiMais: () => { const itens = itensMais(); if (ia) ia.menuMais(itens, { aoEscolher: escolherMais }); else if (itens.length) escolherMais(itens[0]); },
-    logout: async () => { ia?.limpar(); await store.sair(); telaLogin = 'entrar'; location.hash = INICIO; rerender(); },
+    fecharEspelho: () => { window.close(); setTimeout(() => { location.href = new URL('../gestao/' + (store.modo === 'local' ? '?demo=1' : ''), location.href).href; }, 150); },
+    logout: async () => {
+      if (!gestao && store.espelho) return comuns.fecharEspelho(); ia?.limpar(); await store.sair(); telaLogin = 'entrar'; location.hash = INICIO; rerender(); },
     // login
     pin: (el) => { if (el.value && el.nextElementSibling) el.nextElementSibling.focus(); const f = el.form; if ([...f.querySelectorAll('.pin input')].every((i) => i.value)) f.requestSubmit(); },
     loginDemo: (f) => { const pin = [0, 1, 2, 3].map((i) => f.elements['p' + i].value).join(''); if (store.entrarDemoGestao(pin)) depoisDeEntrar(); else { toast('PIN incorreto'); f.reset(); f.elements.p0.focus(); } },
@@ -446,6 +521,8 @@ export function criarApp(def) {
     zerar: () => confirmar('Apagar todos os dados fictícios e começar do zero (só neste navegador)?', { ok: 'Começar do zero' }).then((y) => y && (store.reset({ vazio: true }), toast('Pronto, tudo zerado'))),
     // plataforma
     editarEmpresa: (el) => modalEmpresa(el.dataset.id),
+    abrirEmpresa: (el) => abrirEmpresa(el.dataset.id, el.dataset.modo),
+    sairSuporte: async () => { try { ia?.limpar(); const ok = await store.sairSuporte(); if (ok) await def.aposEntrar?.(); toast('Você saiu da empresa do cliente'); location.hash = ok ? INICIO : '#/plataforma'; go(); } catch (e) { toast(e.message); } },
     recarregarPlataforma: () => carregarPlataforma(),
   };
   delegate(root, new Proxy({}, { get: (_, k) => def.acoes?.[k] || comuns[k] }));
@@ -477,5 +554,5 @@ export function criarApp(def) {
     });
   }
 
-  return { S, tela, pageHead, busca, lerForm, rerender, iniciar, get current() { return current; }, store, U, ia };
+  return { S, tela, pageHead, busca, lerForm, rerender, iniciar, linkVer, linkUsuario, get current() { return current; }, store, U, ia };
 }

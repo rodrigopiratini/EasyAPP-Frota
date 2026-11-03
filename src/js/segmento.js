@@ -1,12 +1,12 @@
 // =====================================================================
-// SEGMENTO — EasyApp Frota: pequenas transportadoras (dono da frota + motoristas).
+// SEGMENTO — EasyAPP Frota: controle de frota (administrador e gestores no escritório, motoristas no app de campo).
 // Este arquivo é lido pelo navegador E pelo supabase/gerar.mjs: só dados, sem importar nada.
 // =====================================================================
 export const SEGMENTO = {
   id: 'easyapp-frota',
   schema: 'frota',                       // pasta deste app no banco (projeto easyapp-fabrica)
   nome: 'EasyAPP Frota',
-  slogan: 'Gestão de frota para pequenas transportadoras: viagens, combustível, despesas, manutenção e o acerto de cada motorista.',
+  slogan: 'Controle de frota: viagens, combustível, despesas, manutenção e o acerto de cada motorista.',
   icone: 'truck',
   logo: null,
 
@@ -20,7 +20,7 @@ export const SEGMENTO = {
   diasTeste: 30,
   atividade: false,                      // registro de atividades fora do menu por enquanto (continua gravando)
 
-  gestao: { nome: 'EasyAPP Frota Gestão', curto: 'Gestão', descricao: 'Para o dono da frota: resultado por caminhão, viagens, combustível, despesas, manutenção e acerto dos motoristas.' },
+  gestao: { nome: 'EasyAPP Frota Gestão', curto: 'Gestão', descricao: 'Para o escritório da frota: resultado por caminhão, viagens, combustível, despesas, manutenção e acerto dos motoristas.' },
   usuario: {
     nome: 'EasyAPP Frota Motorista', curto: 'Motorista', descricao: 'Para o motorista: iniciar e encerrar viagens, lançar abastecimentos e despesas na hora e ver o próprio acerto.',
     colecao: 'motoristas', papel: 'Motorista', papelPlural: 'Motoristas', icone: 'fuel',

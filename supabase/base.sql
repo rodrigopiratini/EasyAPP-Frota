@@ -6,7 +6,7 @@
 -- =====================================================================
 --
 -- Modelo
---   empresas  → cada cliente pagante (ex.: uma transportadora). Todos os dados levam empresa_id.
+--   empresas  → cada cliente pagante (ex.: uma frota). Todos os dados levam empresa_id.
 --   docs      → todos os registros do app como documentos JSON (coluna data), separados por coleção
 --               (ex.: veiculos, viagens). Novas coleções não precisam de tabela nova: basta
 --               declarar em src/js/segmento.js (o gerar.mjs grava as regras na tabela colecoes).
@@ -16,12 +16,12 @@
 --                 campo_ref: campo que diz a quem pertence o documento (ex.: motoristaId; 'id' = o próprio)
 --                 protegidos: campos que o usuário não altera (ex.: valor do frete)
 --                 trava: campo booleano; quando true o usuário não altera nem apaga mais (ex.: conferido)
---   perfis    → quem é quem: dono / gestor (e-mail e senha) ou usuario (código + PIN, login anônimo)
+--   perfis    → quem é quem: dono = Administrador, gestor = Gestor (e-mail e senha) ou usuario = Usuário (código + PIN, login anônimo)
 --   acessos   → código + PIN de cada usuário do app de campo (motorista, parceiro, técnico…)
 --
 -- Assinatura: empresas.situacao (teste | ativa | suspensa | cancelada). Fora do teste ou do
 -- pagamento em dia, o banco recusa gravações (os dados continuam visíveis para exportar).
--- O administrador da plataforma (tabela plataforma_admins) gerencia as empresas pelo app de Gestão.
+-- O desenvolvedor (tabela plataforma_admins) gerencia as empresas pelo app de Gestão.
 
 create extension if not exists pgcrypto;
 
@@ -93,6 +93,8 @@ create table if not exists public.convites (
   usado_por uuid references auth.users(id) on delete set null,
   usado_em timestamptz
 );
+-- papel de quem usar o convite: gestor (usuário da Gestão, convidado pelo dono) ou dono (convite feito pelo desenvolvedor na Plataforma)
+alter table public.convites add column if not exists papel text not null default 'gestor' check (papel in ('dono', 'gestor'));
 
 create table if not exists public.tentativas_login (
   codigo text primary key,
@@ -101,6 +103,16 @@ create table if not exists public.tentativas_login (
 );
 
 create table if not exists public.plataforma_admins (email text primary key);
+
+-- Visita de suporte: o desenvolvedor abre uma empresa pelo próprio app (com o login dele,
+-- verificação em duas etapas e prazo). Enquanto vale, o app enxerga aquela empresa como o dono enxerga.
+create table if not exists public.suporte_visitas (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  empresa_id uuid not null references public.empresas(id) on delete cascade,
+  modo text not null check (modo in ('leitura', 'edicao')),
+  desde timestamptz not null default now(),
+  ate timestamptz not null
+);
 
 create table if not exists public.atividade (
   id bigint generated always as identity primary key,
@@ -119,13 +131,37 @@ create table if not exists public.atividade (
 create index if not exists atividade_empresa_idx on public.atividade (empresa_id, em desc);
 
 -- ---------- Funções auxiliares ----------
+create or replace function public.eh_admin() returns boolean
+language sql stable security definer set search_path = public as
+$$ select coalesce((auth.jwt()->>'is_anonymous')::boolean, false) = false
+      and exists (select 1 from public.plataforma_admins where lower(email) = lower(auth.jwt()->>'email')) $$;
+
+-- Visita de suporte em vigor: só para o desenvolvedor, dentro do prazo e com a verificação em duas etapas
+-- feita nesta sessão (aal2). Sem isso as funções abaixo ignoram a visita.
+create or replace function public.visita_empresa() returns uuid
+language sql stable security definer set search_path = public as
+$$ select v.empresa_id from public.suporte_visitas v
+    where v.user_id = auth.uid() and v.ate > now() and coalesce(auth.jwt()->>'aal', '') = 'aal2' and public.eh_admin() $$;
+
+create or replace function public.visita_modo(p_empresa uuid) returns text
+language sql stable security definer set search_path = public as
+$$ select v.modo from public.suporte_visitas v
+    where v.user_id = auth.uid() and v.empresa_id = p_empresa and v.ate > now() and coalesce(auth.jwt()->>'aal', '') = 'aal2' and public.eh_admin() $$;
+
+-- Visita "só ver": o banco recusa qualquer gravação nessa empresa
+create or replace function public.so_leitura(p_empresa uuid) returns boolean
+language sql stable security definer set search_path = public as
+$$ select coalesce(public.visita_modo(p_empresa) = 'leitura', false) $$;
+
 create or replace function public.eh_gestao(p_empresa uuid) returns boolean
 language sql stable security definer set search_path = public as
-$$ select exists (select 1 from public.perfis where user_id = auth.uid() and empresa_id = p_empresa and papel in ('dono', 'gestor')) $$;
+$$ select exists (select 1 from public.perfis where user_id = auth.uid() and empresa_id = p_empresa and papel in ('dono', 'gestor'))
+       or public.visita_modo(p_empresa) is not null $$;
 
 create or replace function public.eh_dono(p_empresa uuid) returns boolean
 language sql stable security definer set search_path = public as
-$$ select exists (select 1 from public.perfis where user_id = auth.uid() and empresa_id = p_empresa and papel = 'dono') $$;
+$$ select exists (select 1 from public.perfis where user_id = auth.uid() and empresa_id = p_empresa and papel = 'dono')
+       or public.visita_modo(p_empresa) is not null $$;
 
 create or replace function public.meu_ref(p_empresa uuid) returns text
 language sql stable security definer set search_path = public as
@@ -133,12 +169,7 @@ $$ select ref from public.perfis where user_id = auth.uid() and empresa_id = p_e
 
 create or replace function public.minha_empresa() returns uuid
 language sql stable security definer set search_path = public as
-$$ select empresa_id from public.perfis where user_id = auth.uid() $$;
-
-create or replace function public.eh_admin() returns boolean
-language sql stable security definer set search_path = public as
-$$ select coalesce((auth.jwt()->>'is_anonymous')::boolean, false) = false
-      and exists (select 1 from public.plataforma_admins where lower(email) = lower(auth.jwt()->>'email')) $$;
+$$ select coalesce(public.visita_empresa(), (select empresa_id from public.perfis where user_id = auth.uid())) $$;
 
 -- Empresa em dia: teste dentro do prazo, ou ativa com pagamento até 5 dias atrasado
 create or replace function public.empresa_liberada(p_empresa uuid) returns boolean
@@ -163,6 +194,7 @@ create or replace function public.pode_gravar(p_empresa uuid, p_colecao text, p_
 language plpgsql stable security definer set search_path = public as $$
 declare v_ref text; c public.colecoes;
 begin
+  if public.so_leitura(p_empresa) then return false; end if;
   if not public.empresa_liberada(p_empresa) then return false; end if;
   if public.eh_gestao(p_empresa) then return true; end if;
   v_ref := public.meu_ref(p_empresa);
@@ -181,7 +213,7 @@ begin
   if c.nome is null then raise exception 'Coleção desconhecida: %', new.colecao; end if;
   if tg_op = 'UPDATE' and new.colecao <> old.colecao then raise exception 'Não é permitido mudar a coleção'; end if;
   if auth.uid() is not null and not public.eh_gestao(new.empresa_id) then
-    foreach k in array c.protegidos || coalesce(array[c.trava], '{}') loop
+    foreach k in array array_remove(c.protegidos || array[c.trava], null) loop
       if tg_op = 'UPDATE' and old.data ? k then new.data := jsonb_set(new.data, array[k], old.data->k);
       else new.data := new.data - k; end if;
     end loop;
@@ -233,16 +265,45 @@ create trigger tg_apagar_acesso after delete on public.acessos for each row exec
 -- ---------- Entrada e cadastro ----------
 create or replace function public.meu_perfil() returns json
 language sql stable security definer set search_path = public as $$
+  -- visita de suporte em vigor: o desenvolvedor vê a empresa visitada como o administrador dela
+  select json_build_object(
+    'papel', 'dono', 'empresaId', e.id, 'ref', null, 'admin', true, 'email', auth.jwt()->>'email',
+    'suporte', json_build_object('modo', v.modo, 'ate', v.ate),
+    'empresa', json_build_object('nome', e.nome, 'situacao', e.situacao, 'plano', e.plano, 'testeAte', e.teste_ate,
+                                 'pagoAte', e.pago_ate, 'liberada', public.empresa_liberada(e.id)))
+  from public.suporte_visitas v join public.empresas e on e.id = v.empresa_id
+  where v.user_id = auth.uid() and v.empresa_id = public.visita_empresa()
+  union all
   select json_build_object(
     'papel', p.papel, 'empresaId', p.empresa_id, 'ref', p.ref, 'admin', public.eh_admin(),
     'email', (select email from auth.users where id = auth.uid()),
     'empresa', json_build_object('nome', e.nome, 'situacao', e.situacao, 'plano', e.plano, 'testeAte', e.teste_ate,
                                  'pagoAte', e.pago_ate, 'liberada', public.empresa_liberada(e.id)))
-  from public.perfis p join public.empresas e on e.id = p.empresa_id where p.user_id = auth.uid()
+  from public.perfis p join public.empresas e on e.id = p.empresa_id where p.user_id = auth.uid() and public.visita_empresa() is null
   union all
   select json_build_object('papel', null, 'admin', true, 'email', auth.jwt()->>'email')
-  where public.eh_admin() and not exists (select 1 from public.perfis where user_id = auth.uid())
+  where public.eh_admin() and public.visita_empresa() is null and not exists (select 1 from public.perfis where user_id = auth.uid())
 $$;
+
+-- Desenvolvedor: abre uma empresa no próprio app (só ver ou ver e corrigir) por 2 horas.
+-- Exige a verificação em duas etapas nesta sessão. Fica no registro de atividades da empresa.
+create or replace function public.suporte_abrir(p_empresa uuid, p_modo text) returns json
+language plpgsql security definer set search_path = public as $$
+declare v_modo text := case when p_modo = 'edicao' then 'edicao' else 'leitura' end;
+begin
+  if not public.eh_admin() then raise exception 'Sem permissão'; end if;
+  if coalesce(auth.jwt()->>'aal', '') <> 'aal2' then raise exception 'MFA: confirme o código de verificação em duas etapas'; end if;
+  if not exists (select 1 from public.empresas where id = p_empresa) then raise exception 'Empresa não encontrada'; end if;
+  insert into public.suporte_visitas (user_id, empresa_id, modo, desde, ate) values (auth.uid(), p_empresa, v_modo, now(), now() + interval '2 hours')
+    on conflict (user_id) do update set empresa_id = excluded.empresa_id, modo = excluded.modo, desde = excluded.desde, ate = excluded.ate;
+  insert into public.atividade (empresa_id, user_id, papel, quem, acao, depois)
+  values (p_empresa, auth.uid(), 'suporte', 'Suporte (' || coalesce(auth.jwt()->>'email', '') || ')', 'acesso', jsonb_build_object('modo', v_modo));
+  return public.meu_perfil();
+end $$;
+
+create or replace function public.suporte_sair() returns void
+language sql security definer set search_path = public as
+$$ delete from public.suporte_visitas where user_id = auth.uid() $$;
 
 -- Cadastro livre: quem cria a conta com e-mail cria a própria empresa (vira dono, em período de teste)
 create or replace function public.criar_empresa(p_nome text) returns uuid
@@ -267,8 +328,19 @@ begin
   select * into v_conv from public.convites where codigo = upper(trim(p_codigo)) and usado_por is null and expira_em > now() for update;
   if v_conv.codigo is null then return false; end if;
   update public.convites set usado_por = auth.uid(), usado_em = now() where codigo = v_conv.codigo;
-  insert into public.perfis (user_id, empresa_id, papel) values (auth.uid(), v_conv.empresa_id, 'gestor');
+  insert into public.perfis (user_id, empresa_id, papel) values (auth.uid(), v_conv.empresa_id, coalesce(v_conv.papel, 'gestor'));
   return true;
+end $$;
+
+-- Desenvolvedor: convite de DONO para uma empresa (ex.: empresa criada para o cliente)
+create or replace function public.plataforma_convite_dono(p_empresa uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare v_codigo text := public.gerar_codigo(8);
+begin
+  if not public.eh_admin() then raise exception 'Sem permissão'; end if;
+  if not exists (select 1 from public.empresas where id = p_empresa) then raise exception 'Empresa não encontrada'; end if;
+  insert into public.convites (codigo, empresa_id, nome, criado_por, papel) values (v_codigo, p_empresa, 'Convite de dono', auth.uid(), 'dono');
+  return v_codigo;
 end $$;
 
 -- Usuário do app de campo: login anônimo + código + PIN (bloqueio após 5 erros)
@@ -300,7 +372,7 @@ create or replace function public.criar_convite(p_nome text) returns text
 language plpgsql security definer set search_path = public as $$
 declare v_codigo text := public.gerar_codigo(8); v_emp uuid := public.minha_empresa();
 begin
-  if not public.eh_dono(v_emp) then raise exception 'Somente o dono pode convidar gestores'; end if;
+  if not public.eh_dono(v_emp) or public.so_leitura(v_emp) then raise exception 'Somente o administrador pode convidar gestores'; end if;
   insert into public.convites (codigo, empresa_id, nome, criado_por) values (v_codigo, v_emp, nullif(trim(p_nome), ''), auth.uid());
   return v_codigo;
 end $$;
@@ -321,14 +393,14 @@ create or replace function public.remover_gestor(p_user uuid) returns void
 language plpgsql security definer set search_path = public as $$
 declare v_emp uuid := public.minha_empresa();
 begin
-  if not public.eh_dono(v_emp) then raise exception 'Somente o dono pode remover gestores'; end if;
+  if not public.eh_dono(v_emp) or public.so_leitura(v_emp) then raise exception 'Somente o administrador pode remover gestores'; end if;
   delete from public.perfis where user_id = p_user and empresa_id = v_emp and papel = 'gestor';
 end $$;
 
 create or replace function public.cancelar_convite(p_codigo text) returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  if not public.eh_dono(public.minha_empresa()) then raise exception 'Sem permissão'; end if;
+  if not public.eh_dono(public.minha_empresa()) or public.so_leitura(public.minha_empresa()) then raise exception 'Sem permissão'; end if;
   delete from public.convites where codigo = upper(p_codigo) and empresa_id = public.minha_empresa() and usado_por is null;
 end $$;
 
@@ -337,6 +409,7 @@ create or replace function public.atividade_autor(out o_papel text, out o_quem t
 language plpgsql stable security definer set search_path = public as $$
 begin
   if auth.uid() is null then o_quem := 'Sistema'; return; end if;
+  if public.visita_empresa() is not null then o_papel := 'suporte'; o_quem := 'Suporte (' || coalesce(auth.jwt()->>'email', '') || ')'; return; end if;
   select papel, ref into o_papel, o_ref from public.perfis where user_id = auth.uid();
   if o_papel = 'usuario' then o_quem := (select nome from public.acessos where empresa_id = public.minha_empresa() and ref = o_ref);
   else o_quem := (select email from auth.users where id = auth.uid()); end if;
@@ -392,14 +465,14 @@ end $$;
 -- Presença: o app aberto manda um sinal a cada 2 minutos (o painel de gestão mostra quem está conectado)
 create or replace function public.sinal() returns void
 language sql security definer set search_path = public as $$
-  update public.perfis set visto_em = now() where user_id = auth.uid();
+  update public.perfis set visto_em = now() where user_id = auth.uid() and public.visita_empresa() is null;
 $$;
 
 create or replace function public.atividade_log(p_antes timestamptz default null, p_user uuid default null, p_desde timestamptz default null, p_limite int default 300) returns json
 language plpgsql stable security definer set search_path = public as $$
 declare v_emp uuid := public.minha_empresa();
 begin
-  if not public.eh_dono(v_emp) then raise exception 'Somente o dono vê o registro de atividades'; end if;
+  if not public.eh_dono(v_emp) then raise exception 'Somente o administrador vê o registro de atividades'; end if;
   return json_build_object(
     'itens', coalesce((select json_agg(x order by x.em desc, x.id desc) from (
         select id, em, user_id "userId", papel, quem, ref, acao, colecao, registro, antes, depois from public.atividade
@@ -411,7 +484,7 @@ begin
           from public.atividade where empresa_id = v_emp and em > now() - interval '30 days' and user_id is not null group by user_id) x), '[]'::json));
 end $$;
 
--- ---------- Plataforma (administrador da fábrica de apps) ----------
+-- ---------- Plataforma (desenvolvedor da fábrica de apps) ----------
 create or replace function public.plataforma_empresas() returns json
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -439,7 +512,8 @@ end $$;
 do $$ declare f text; begin
   foreach f in array array['criar_empresa(text)', 'entrar_convite(text)', 'vincular_usuario(text, text)', 'criar_convite(text)', 'equipe()',
     'remover_gestor(uuid)', 'cancelar_convite(text)', 'registrar_acesso()', 'sinal()', 'atividade_log(timestamptz, uuid, timestamptz, int)',
-    'plataforma_empresas()', 'plataforma_atualizar(uuid, text, text, date, date, numeric, text)', 'meu_perfil()'] loop
+    'plataforma_empresas()', 'plataforma_atualizar(uuid, text, text, date, date, numeric, text)', 'meu_perfil()',
+    'suporte_abrir(uuid, text)', 'suporte_sair()', 'plataforma_convite_dono(uuid)'] loop
     execute format('revoke all on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);
   end loop;
@@ -456,6 +530,7 @@ alter table public.convites enable row level security;
 alter table public.tentativas_login enable row level security;
 alter table public.plataforma_admins enable row level security;
 alter table public.atividade enable row level security;
+alter table public.suporte_visitas enable row level security;
 
 do $$ declare r record; begin
   for r in select policyname, tablename from pg_policies where schemaname = 'public' and policyname like 'ea_%' loop
@@ -469,15 +544,17 @@ create policy ea_alterar on public.docs for update to authenticated using (publi
 create policy ea_apagar on public.docs for delete to authenticated using (public.pode_gravar(empresa_id, colecao, ref, data));
 
 create policy ea_empresa on public.empresas for select to authenticated using (id = public.minha_empresa());
-create policy ea_empresa_nome on public.empresas for update to authenticated using (public.eh_dono(id)) with check (public.eh_dono(id));
+create policy ea_empresa_nome on public.empresas for update to authenticated using (public.eh_dono(id) and not public.so_leitura(id)) with check (public.eh_dono(id) and not public.so_leitura(id));
 create policy ea_colecoes on public.colecoes for select to authenticated using (true);
 create policy ea_perfil on public.perfis for select to authenticated using (user_id = auth.uid() or public.eh_gestao(empresa_id));
-create policy ea_acessos on public.acessos for all to authenticated using (public.eh_gestao(empresa_id)) with check (public.eh_gestao(empresa_id) and public.empresa_liberada(empresa_id));
+create policy ea_acessos_ler on public.acessos for select to authenticated using (public.eh_gestao(empresa_id));
+create policy ea_acessos on public.acessos for all to authenticated using (public.eh_gestao(empresa_id) and not public.so_leitura(empresa_id))
+  with check (public.eh_gestao(empresa_id) and not public.so_leitura(empresa_id) and public.empresa_liberada(empresa_id));
 
 grant select, insert, update, delete on public.docs, public.acessos to authenticated;
 grant select on public.colecoes, public.perfis to authenticated;
 grant select, update (nome) on public.empresas to authenticated;
-revoke all on public.convites, public.tentativas_login, public.plataforma_admins, public.atividade from anon, authenticated;
+revoke all on public.convites, public.tentativas_login, public.plataforma_admins, public.atividade, public.suporte_visitas from anon, authenticated;
 
 -- ---------- Tempo real ----------
 do $$ begin

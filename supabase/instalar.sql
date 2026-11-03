@@ -13,7 +13,7 @@ grant usage on schema frota to anon, authenticated, service_role;
 -- =====================================================================
 --
 -- Modelo
---   empresas  → cada cliente pagante (ex.: uma transportadora). Todos os dados levam empresa_id.
+--   empresas  → cada cliente pagante (ex.: uma frota). Todos os dados levam empresa_id.
 --   docs      → todos os registros do app como documentos JSON (coluna data), separados por coleção
 --               (ex.: veiculos, viagens). Novas coleções não precisam de tabela nova: basta
 --               declarar em src/js/segmento.js (o gerar.mjs grava as regras na tabela colecoes).
@@ -23,12 +23,12 @@ grant usage on schema frota to anon, authenticated, service_role;
 --                 campo_ref: campo que diz a quem pertence o documento (ex.: motoristaId; 'id' = o próprio)
 --                 protegidos: campos que o usuário não altera (ex.: valor do frete)
 --                 trava: campo booleano; quando true o usuário não altera nem apaga mais (ex.: conferido)
---   perfis    → quem é quem: dono / gestor (e-mail e senha) ou usuario (código + PIN, login anônimo)
+--   perfis    → quem é quem: dono = Administrador, gestor = Gestor (e-mail e senha) ou usuario = Usuário (código + PIN, login anônimo)
 --   acessos   → código + PIN de cada usuário do app de campo (motorista, parceiro, técnico…)
 --
 -- Assinatura: empresas.situacao (teste | ativa | suspensa | cancelada). Fora do teste ou do
 -- pagamento em dia, o banco recusa gravações (os dados continuam visíveis para exportar).
--- O administrador da plataforma (tabela plataforma_admins) gerencia as empresas pelo app de Gestão.
+-- O desenvolvedor (tabela plataforma_admins) gerencia as empresas pelo app de Gestão.
 
 create extension if not exists pgcrypto;
 
@@ -100,6 +100,8 @@ create table if not exists frota.convites (
   usado_por uuid references auth.users(id) on delete set null,
   usado_em timestamptz
 );
+-- papel de quem usar o convite: gestor (usuário da Gestão, convidado pelo dono) ou dono (convite feito pelo desenvolvedor na Plataforma)
+alter table frota.convites add column if not exists papel text not null default 'gestor' check (papel in ('dono', 'gestor'));
 
 create table if not exists frota.tentativas_login (
   codigo text primary key,
@@ -108,6 +110,16 @@ create table if not exists frota.tentativas_login (
 );
 
 create table if not exists frota.plataforma_admins (email text primary key);
+
+-- Visita de suporte: o desenvolvedor abre uma empresa pelo próprio app (com o login dele,
+-- verificação em duas etapas e prazo). Enquanto vale, o app enxerga aquela empresa como o dono enxerga.
+create table if not exists frota.suporte_visitas (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  empresa_id uuid not null references frota.empresas(id) on delete cascade,
+  modo text not null check (modo in ('leitura', 'edicao')),
+  desde timestamptz not null default now(),
+  ate timestamptz not null
+);
 
 create table if not exists frota.atividade (
   id bigint generated always as identity primary key,
@@ -126,13 +138,37 @@ create table if not exists frota.atividade (
 create index if not exists atividade_empresa_idx on frota.atividade (empresa_id, em desc);
 
 -- ---------- Funções auxiliares ----------
+create or replace function frota.eh_admin() returns boolean
+language sql stable security definer set search_path = frota, public, extensions as
+$$ select coalesce((auth.jwt()->>'is_anonymous')::boolean, false) = false
+      and exists (select 1 from frota.plataforma_admins where lower(email) = lower(auth.jwt()->>'email')) $$;
+
+-- Visita de suporte em vigor: só para o desenvolvedor, dentro do prazo e com a verificação em duas etapas
+-- feita nesta sessão (aal2). Sem isso as funções abaixo ignoram a visita.
+create or replace function frota.visita_empresa() returns uuid
+language sql stable security definer set search_path = frota, public, extensions as
+$$ select v.empresa_id from frota.suporte_visitas v
+    where v.user_id = auth.uid() and v.ate > now() and coalesce(auth.jwt()->>'aal', '') = 'aal2' and frota.eh_admin() $$;
+
+create or replace function frota.visita_modo(p_empresa uuid) returns text
+language sql stable security definer set search_path = frota, public, extensions as
+$$ select v.modo from frota.suporte_visitas v
+    where v.user_id = auth.uid() and v.empresa_id = p_empresa and v.ate > now() and coalesce(auth.jwt()->>'aal', '') = 'aal2' and frota.eh_admin() $$;
+
+-- Visita "só ver": o banco recusa qualquer gravação nessa empresa
+create or replace function frota.so_leitura(p_empresa uuid) returns boolean
+language sql stable security definer set search_path = frota, public, extensions as
+$$ select coalesce(frota.visita_modo(p_empresa) = 'leitura', false) $$;
+
 create or replace function frota.eh_gestao(p_empresa uuid) returns boolean
 language sql stable security definer set search_path = frota, public, extensions as
-$$ select exists (select 1 from frota.perfis where user_id = auth.uid() and empresa_id = p_empresa and papel in ('dono', 'gestor')) $$;
+$$ select exists (select 1 from frota.perfis where user_id = auth.uid() and empresa_id = p_empresa and papel in ('dono', 'gestor'))
+       or frota.visita_modo(p_empresa) is not null $$;
 
 create or replace function frota.eh_dono(p_empresa uuid) returns boolean
 language sql stable security definer set search_path = frota, public, extensions as
-$$ select exists (select 1 from frota.perfis where user_id = auth.uid() and empresa_id = p_empresa and papel = 'dono') $$;
+$$ select exists (select 1 from frota.perfis where user_id = auth.uid() and empresa_id = p_empresa and papel = 'dono')
+       or frota.visita_modo(p_empresa) is not null $$;
 
 create or replace function frota.meu_ref(p_empresa uuid) returns text
 language sql stable security definer set search_path = frota, public, extensions as
@@ -140,12 +176,7 @@ $$ select ref from frota.perfis where user_id = auth.uid() and empresa_id = p_em
 
 create or replace function frota.minha_empresa() returns uuid
 language sql stable security definer set search_path = frota, public, extensions as
-$$ select empresa_id from frota.perfis where user_id = auth.uid() $$;
-
-create or replace function frota.eh_admin() returns boolean
-language sql stable security definer set search_path = frota, public, extensions as
-$$ select coalesce((auth.jwt()->>'is_anonymous')::boolean, false) = false
-      and exists (select 1 from frota.plataforma_admins where lower(email) = lower(auth.jwt()->>'email')) $$;
+$$ select coalesce(frota.visita_empresa(), (select empresa_id from frota.perfis where user_id = auth.uid())) $$;
 
 -- Empresa em dia: teste dentro do prazo, ou ativa com pagamento até 5 dias atrasado
 create or replace function frota.empresa_liberada(p_empresa uuid) returns boolean
@@ -170,6 +201,7 @@ create or replace function frota.pode_gravar(p_empresa uuid, p_colecao text, p_r
 language plpgsql stable security definer set search_path = frota, public, extensions as $$
 declare v_ref text; c frota.colecoes;
 begin
+  if frota.so_leitura(p_empresa) then return false; end if;
   if not frota.empresa_liberada(p_empresa) then return false; end if;
   if frota.eh_gestao(p_empresa) then return true; end if;
   v_ref := frota.meu_ref(p_empresa);
@@ -188,7 +220,7 @@ begin
   if c.nome is null then raise exception 'Coleção desconhecida: %', new.colecao; end if;
   if tg_op = 'UPDATE' and new.colecao <> old.colecao then raise exception 'Não é permitido mudar a coleção'; end if;
   if auth.uid() is not null and not frota.eh_gestao(new.empresa_id) then
-    foreach k in array c.protegidos || coalesce(array[c.trava], '{}') loop
+    foreach k in array array_remove(c.protegidos || array[c.trava], null) loop
       if tg_op = 'UPDATE' and old.data ? k then new.data := jsonb_set(new.data, array[k], old.data->k);
       else new.data := new.data - k; end if;
     end loop;
@@ -240,16 +272,45 @@ create trigger tg_apagar_acesso after delete on frota.acessos for each row execu
 -- ---------- Entrada e cadastro ----------
 create or replace function frota.meu_perfil() returns json
 language sql stable security definer set search_path = frota, public, extensions as $$
+  -- visita de suporte em vigor: o desenvolvedor vê a empresa visitada como o administrador dela
+  select json_build_object(
+    'papel', 'dono', 'empresaId', e.id, 'ref', null, 'admin', true, 'email', auth.jwt()->>'email',
+    'suporte', json_build_object('modo', v.modo, 'ate', v.ate),
+    'empresa', json_build_object('nome', e.nome, 'situacao', e.situacao, 'plano', e.plano, 'testeAte', e.teste_ate,
+                                 'pagoAte', e.pago_ate, 'liberada', frota.empresa_liberada(e.id)))
+  from frota.suporte_visitas v join frota.empresas e on e.id = v.empresa_id
+  where v.user_id = auth.uid() and v.empresa_id = frota.visita_empresa()
+  union all
   select json_build_object(
     'papel', p.papel, 'empresaId', p.empresa_id, 'ref', p.ref, 'admin', frota.eh_admin(),
     'email', (select email from auth.users where id = auth.uid()),
     'empresa', json_build_object('nome', e.nome, 'situacao', e.situacao, 'plano', e.plano, 'testeAte', e.teste_ate,
                                  'pagoAte', e.pago_ate, 'liberada', frota.empresa_liberada(e.id)))
-  from frota.perfis p join frota.empresas e on e.id = p.empresa_id where p.user_id = auth.uid()
+  from frota.perfis p join frota.empresas e on e.id = p.empresa_id where p.user_id = auth.uid() and frota.visita_empresa() is null
   union all
   select json_build_object('papel', null, 'admin', true, 'email', auth.jwt()->>'email')
-  where frota.eh_admin() and not exists (select 1 from frota.perfis where user_id = auth.uid())
+  where frota.eh_admin() and frota.visita_empresa() is null and not exists (select 1 from frota.perfis where user_id = auth.uid())
 $$;
+
+-- Desenvolvedor: abre uma empresa no próprio app (só ver ou ver e corrigir) por 2 horas.
+-- Exige a verificação em duas etapas nesta sessão. Fica no registro de atividades da empresa.
+create or replace function frota.suporte_abrir(p_empresa uuid, p_modo text) returns json
+language plpgsql security definer set search_path = frota, public, extensions as $$
+declare v_modo text := case when p_modo = 'edicao' then 'edicao' else 'leitura' end;
+begin
+  if not frota.eh_admin() then raise exception 'Sem permissão'; end if;
+  if coalesce(auth.jwt()->>'aal', '') <> 'aal2' then raise exception 'MFA: confirme o código de verificação em duas etapas'; end if;
+  if not exists (select 1 from frota.empresas where id = p_empresa) then raise exception 'Empresa não encontrada'; end if;
+  insert into frota.suporte_visitas (user_id, empresa_id, modo, desde, ate) values (auth.uid(), p_empresa, v_modo, now(), now() + interval '2 hours')
+    on conflict (user_id) do update set empresa_id = excluded.empresa_id, modo = excluded.modo, desde = excluded.desde, ate = excluded.ate;
+  insert into frota.atividade (empresa_id, user_id, papel, quem, acao, depois)
+  values (p_empresa, auth.uid(), 'suporte', 'Suporte (' || coalesce(auth.jwt()->>'email', '') || ')', 'acesso', jsonb_build_object('modo', v_modo));
+  return frota.meu_perfil();
+end $$;
+
+create or replace function frota.suporte_sair() returns void
+language sql security definer set search_path = frota, public, extensions as
+$$ delete from frota.suporte_visitas where user_id = auth.uid() $$;
 
 -- Cadastro livre: quem cria a conta com e-mail cria a própria empresa (vira dono, em período de teste)
 create or replace function frota.criar_empresa(p_nome text) returns uuid
@@ -274,8 +335,19 @@ begin
   select * into v_conv from frota.convites where codigo = upper(trim(p_codigo)) and usado_por is null and expira_em > now() for update;
   if v_conv.codigo is null then return false; end if;
   update frota.convites set usado_por = auth.uid(), usado_em = now() where codigo = v_conv.codigo;
-  insert into frota.perfis (user_id, empresa_id, papel) values (auth.uid(), v_conv.empresa_id, 'gestor');
+  insert into frota.perfis (user_id, empresa_id, papel) values (auth.uid(), v_conv.empresa_id, coalesce(v_conv.papel, 'gestor'));
   return true;
+end $$;
+
+-- Desenvolvedor: convite de DONO para uma empresa (ex.: empresa criada para o cliente)
+create or replace function frota.plataforma_convite_dono(p_empresa uuid) returns text
+language plpgsql security definer set search_path = frota, public, extensions as $$
+declare v_codigo text := frota.gerar_codigo(8);
+begin
+  if not frota.eh_admin() then raise exception 'Sem permissão'; end if;
+  if not exists (select 1 from frota.empresas where id = p_empresa) then raise exception 'Empresa não encontrada'; end if;
+  insert into frota.convites (codigo, empresa_id, nome, criado_por, papel) values (v_codigo, p_empresa, 'Convite de dono', auth.uid(), 'dono');
+  return v_codigo;
 end $$;
 
 -- Usuário do app de campo: login anônimo + código + PIN (bloqueio após 5 erros)
@@ -307,7 +379,7 @@ create or replace function frota.criar_convite(p_nome text) returns text
 language plpgsql security definer set search_path = frota, public, extensions as $$
 declare v_codigo text := frota.gerar_codigo(8); v_emp uuid := frota.minha_empresa();
 begin
-  if not frota.eh_dono(v_emp) then raise exception 'Somente o dono pode convidar gestores'; end if;
+  if not frota.eh_dono(v_emp) or frota.so_leitura(v_emp) then raise exception 'Somente o administrador pode convidar gestores'; end if;
   insert into frota.convites (codigo, empresa_id, nome, criado_por) values (v_codigo, v_emp, nullif(trim(p_nome), ''), auth.uid());
   return v_codigo;
 end $$;
@@ -328,14 +400,14 @@ create or replace function frota.remover_gestor(p_user uuid) returns void
 language plpgsql security definer set search_path = frota, public, extensions as $$
 declare v_emp uuid := frota.minha_empresa();
 begin
-  if not frota.eh_dono(v_emp) then raise exception 'Somente o dono pode remover gestores'; end if;
+  if not frota.eh_dono(v_emp) or frota.so_leitura(v_emp) then raise exception 'Somente o administrador pode remover gestores'; end if;
   delete from frota.perfis where user_id = p_user and empresa_id = v_emp and papel = 'gestor';
 end $$;
 
 create or replace function frota.cancelar_convite(p_codigo text) returns void
 language plpgsql security definer set search_path = frota, public, extensions as $$
 begin
-  if not frota.eh_dono(frota.minha_empresa()) then raise exception 'Sem permissão'; end if;
+  if not frota.eh_dono(frota.minha_empresa()) or frota.so_leitura(frota.minha_empresa()) then raise exception 'Sem permissão'; end if;
   delete from frota.convites where codigo = upper(p_codigo) and empresa_id = frota.minha_empresa() and usado_por is null;
 end $$;
 
@@ -344,6 +416,7 @@ create or replace function frota.atividade_autor(out o_papel text, out o_quem te
 language plpgsql stable security definer set search_path = frota, public, extensions as $$
 begin
   if auth.uid() is null then o_quem := 'Sistema'; return; end if;
+  if frota.visita_empresa() is not null then o_papel := 'suporte'; o_quem := 'Suporte (' || coalesce(auth.jwt()->>'email', '') || ')'; return; end if;
   select papel, ref into o_papel, o_ref from frota.perfis where user_id = auth.uid();
   if o_papel = 'usuario' then o_quem := (select nome from frota.acessos where empresa_id = frota.minha_empresa() and ref = o_ref);
   else o_quem := (select email from auth.users where id = auth.uid()); end if;
@@ -399,14 +472,14 @@ end $$;
 -- Presença: o app aberto manda um sinal a cada 2 minutos (o painel de gestão mostra quem está conectado)
 create or replace function frota.sinal() returns void
 language sql security definer set search_path = frota, public, extensions as $$
-  update frota.perfis set visto_em = now() where user_id = auth.uid();
+  update frota.perfis set visto_em = now() where user_id = auth.uid() and frota.visita_empresa() is null;
 $$;
 
 create or replace function frota.atividade_log(p_antes timestamptz default null, p_user uuid default null, p_desde timestamptz default null, p_limite int default 300) returns json
 language plpgsql stable security definer set search_path = frota, public, extensions as $$
 declare v_emp uuid := frota.minha_empresa();
 begin
-  if not frota.eh_dono(v_emp) then raise exception 'Somente o dono vê o registro de atividades'; end if;
+  if not frota.eh_dono(v_emp) then raise exception 'Somente o administrador vê o registro de atividades'; end if;
   return json_build_object(
     'itens', coalesce((select json_agg(x order by x.em desc, x.id desc) from (
         select id, em, user_id "userId", papel, quem, ref, acao, colecao, registro, antes, depois from frota.atividade
@@ -418,7 +491,7 @@ begin
           from frota.atividade where empresa_id = v_emp and em > now() - interval '30 days' and user_id is not null group by user_id) x), '[]'::json));
 end $$;
 
--- ---------- Plataforma (administrador da fábrica de apps) ----------
+-- ---------- Plataforma (desenvolvedor da fábrica de apps) ----------
 create or replace function frota.plataforma_empresas() returns json
 language plpgsql stable security definer set search_path = frota, public, extensions as $$
 begin
@@ -446,7 +519,8 @@ end $$;
 do $$ declare f text; begin
   foreach f in array array['criar_empresa(text)', 'entrar_convite(text)', 'vincular_usuario(text, text)', 'criar_convite(text)', 'equipe()',
     'remover_gestor(uuid)', 'cancelar_convite(text)', 'registrar_acesso()', 'sinal()', 'atividade_log(timestamptz, uuid, timestamptz, int)',
-    'plataforma_empresas()', 'plataforma_atualizar(uuid, text, text, date, date, numeric, text)', 'meu_perfil()'] loop
+    'plataforma_empresas()', 'plataforma_atualizar(uuid, text, text, date, date, numeric, text)', 'meu_perfil()',
+    'suporte_abrir(uuid, text)', 'suporte_sair()', 'plataforma_convite_dono(uuid)'] loop
     execute format('revoke all on function frota.%s from public, anon', f);
     execute format('grant execute on function frota.%s to authenticated', f);
   end loop;
@@ -463,6 +537,7 @@ alter table frota.convites enable row level security;
 alter table frota.tentativas_login enable row level security;
 alter table frota.plataforma_admins enable row level security;
 alter table frota.atividade enable row level security;
+alter table frota.suporte_visitas enable row level security;
 
 do $$ declare r record; begin
   for r in select policyname, tablename from pg_policies where schemaname = 'frota' and policyname like 'ea_%' loop
@@ -476,15 +551,17 @@ create policy ea_alterar on frota.docs for update to authenticated using (frota.
 create policy ea_apagar on frota.docs for delete to authenticated using (frota.pode_gravar(empresa_id, colecao, ref, data));
 
 create policy ea_empresa on frota.empresas for select to authenticated using (id = frota.minha_empresa());
-create policy ea_empresa_nome on frota.empresas for update to authenticated using (frota.eh_dono(id)) with check (frota.eh_dono(id));
+create policy ea_empresa_nome on frota.empresas for update to authenticated using (frota.eh_dono(id) and not frota.so_leitura(id)) with check (frota.eh_dono(id) and not frota.so_leitura(id));
 create policy ea_colecoes on frota.colecoes for select to authenticated using (true);
 create policy ea_perfil on frota.perfis for select to authenticated using (user_id = auth.uid() or frota.eh_gestao(empresa_id));
-create policy ea_acessos on frota.acessos for all to authenticated using (frota.eh_gestao(empresa_id)) with check (frota.eh_gestao(empresa_id) and frota.empresa_liberada(empresa_id));
+create policy ea_acessos_ler on frota.acessos for select to authenticated using (frota.eh_gestao(empresa_id));
+create policy ea_acessos on frota.acessos for all to authenticated using (frota.eh_gestao(empresa_id) and not frota.so_leitura(empresa_id))
+  with check (frota.eh_gestao(empresa_id) and not frota.so_leitura(empresa_id) and frota.empresa_liberada(empresa_id));
 
 grant select, insert, update, delete on frota.docs, frota.acessos to authenticated;
 grant select on frota.colecoes, frota.perfis to authenticated;
 grant select, update (nome) on frota.empresas to authenticated;
-revoke all on frota.convites, frota.tentativas_login, frota.plataforma_admins, frota.atividade from anon, authenticated;
+revoke all on frota.convites, frota.tentativas_login, frota.plataforma_admins, frota.atividade, frota.suporte_visitas from anon, authenticated;
 
 -- ---------- Tempo real ----------
 do $$ begin
@@ -518,7 +595,7 @@ alter table frota.empresas alter column teste_ate set default (current_date + 30
 -- ---------- Administradores da plataforma ----------
 
 -- ---------- Regras específicas do segmento (supabase/segmento.sql) ----------
--- Regras específicas do EasyApp Frota.
+-- Regras específicas do EasyAPP Frota.
 -- As coleções e regras de acesso ficam em src/js/segmento.js (o gerar.mjs grava na tabela colecoes).
 
 -- Motorista: viagem lançada por ele fica com o próprio motoristaId e começa sem valores financeiros
