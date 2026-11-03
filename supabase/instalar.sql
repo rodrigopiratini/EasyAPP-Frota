@@ -1,4 +1,4 @@
--- EasyApp Frota — instalação do banco no Supabase (gerado por supabase/gerar.mjs; não edite à mão)
+-- EasyAPP Frota — instalação do banco no Supabase (gerado por supabase/gerar.mjs; não edite à mão)
 -- Como usar: Supabase › SQL Editor › New query › cole este arquivo inteiro › Run. Pode rodar de novo sem perder dados.
 -- Pasta (schema) deste app: frota. Depois de rodar, inclua "frota" em Project Settings › Data API › Exposed schemas.
 

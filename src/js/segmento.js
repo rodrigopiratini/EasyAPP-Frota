@@ -5,7 +5,7 @@
 export const SEGMENTO = {
   id: 'easyapp-frota',
   schema: 'frota',                       // pasta deste app no banco (projeto easyapp-fabrica)
-  nome: 'EasyApp Frota',
+  nome: 'EasyAPP Frota',
   slogan: 'Gestão de frota para pequenas transportadoras: viagens, combustível, despesas, manutenção e o acerto de cada motorista.',
   icone: 'truck',
   logo: null,
@@ -19,9 +19,9 @@ export const SEGMENTO = {
   ],
   diasTeste: 30,
 
-  gestao: { nome: 'EasyApp Frota Gestão', curto: 'Gestão', descricao: 'Para o dono da frota: resultado por caminhão, viagens, combustível, despesas, manutenção e acerto dos motoristas.' },
+  gestao: { nome: 'EasyAPP Frota Gestão', curto: 'Gestão', descricao: 'Para o dono da frota: resultado por caminhão, viagens, combustível, despesas, manutenção e acerto dos motoristas.' },
   usuario: {
-    nome: 'EasyApp Frota Motorista', curto: 'Motorista', descricao: 'Para o motorista: iniciar e encerrar viagens, lançar abastecimentos e despesas na hora e ver o próprio acerto.',
+    nome: 'EasyAPP Frota Motorista', curto: 'Motorista', descricao: 'Para o motorista: iniciar e encerrar viagens, lançar abastecimentos e despesas na hora e ver o próprio acerto.',
     colecao: 'motoristas', papel: 'Motorista', papelPlural: 'Motoristas', icone: 'fuel',
   },
 
