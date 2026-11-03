@@ -24,6 +24,8 @@
   No app do motorista o caminhão vem da viagem (não dá para trocar) e há o botão **Recebi**.
 - **Fechar:** página da viagem (`#/viagem/<id>`) mostra receitas, despesas e o acerto: ficou com o motorista − o que ele pagou − comissão
   = devolve/recebe. Relatório PDF, WhatsApp, **Fechar viagem** (confere tudo) e **Reabrir**. Viagem do motorista é numerada pela Gestão ao chegar.
+- **Agrupado por viagem:** Conferir (cada viagem abre os lançamentos dela; "Conferir viagem"), página do motorista (acerto por viagem),
+  Lançamentos e Meu acerto no app do motorista. Combustível é uma categoria do menu **Despesas** (não há mais menu Combustível).
 - **Excluir viagem** apaga junto as despesas, abastecimentos e recebimentos dela.
 - Km com ponto de milhar (campo `inteiro` do núcleo). Painel: cartões e "Para onde vai o dinheiro" abrem detalhamento/extrato.
 - Os custos que estavam em campos da viagem (dados importados do Financial) viraram despesas ligadas a cada viagem.

@@ -201,12 +201,12 @@ let ACOES;
 const A = criarApp({
   tipo: 'gestao',
   inicio: '#/painel',
-  nav: [['#/painel', 'chart', 'Painel'], ['#/viagens', 'map', 'Viagens'], ['#/conferir', 'check', 'Conferir'], ['#/abastecimentos', 'fuel', 'Combustível'],
+  nav: [['#/painel', 'chart', 'Painel'], ['#/viagens', 'map', 'Viagens'], ['#/conferir', 'check', 'Conferir'],
     ['#/despesas', 'receipt', 'Despesas'], ['#/veiculos', 'truck', 'Veículos'], ['#/motoristas', 'users', 'Motoristas'], ['#/clientes', 'store', 'Clientes']],
   tabs: [['#/painel', 'chart', 'Painel'], ['#/viagens', 'map', 'Viagens'], ['#/conferir', 'check', 'Conferir'], ['#/veiculos', 'truck', 'Veículos'], ['#/mais', 'menu', 'Mais']],
   badges: (s) => ({ '#/conferir': D.aConferir(s).length }),
-  ativo: (h, r) => (h === '#/viagens' && r.startsWith('#/viagem/')) || (h === '#/veiculos' && r.startsWith('#/veiculo/')) || (h === '#/motoristas' && r.startsWith('#/motorista/')),
-  rotas: [['/painel', vPainel], ['/viagens', vViagens], ['/viagem/:id', vViagem], ['/conferir', vConferir], ['/abastecimentos', vAbastecimentos], ['/despesas', vDespesas],
+  ativo: (h, r) => (h === '#/despesas' && r.startsWith('#/abastecimentos')) || (h === '#/viagens' && r.startsWith('#/viagem/')) || (h === '#/veiculos' && r.startsWith('#/veiculo/')) || (h === '#/motoristas' && r.startsWith('#/motorista/')),
+  rotas: [['/painel', vPainel], ['/viagens', vViagens], ['/viagem/:id', vViagem], ['/conferir', vConferir], ['/abastecimentos', (a) => vDespesas({ ...a, query: { ...a.query, c: 'combustivel' } })], ['/despesas', vDespesas],
     ['/veiculos', vVeiculos], ['/veiculo/:id', vVeiculo], ['/motoristas', vMotoristas], ['/motorista/:id', vMotorista], ['/clientes', vClientes]],
   camposEmpresa: [['cidade', 'Cidade/UF'], ['cnpj', 'CNPJ'], ['whatsapp', 'WhatsApp da empresa', '5554999999999']],
   topoDireita: (s) => `<a href="#/conferir" style="color:#fff;position:relative">${icon('check')}${D.aConferir(s).length ? `<span class="badge dot" style="position:absolute;top:-6px;right:-8px">${D.aConferir(s).length}</span>` : ''}</a>`,
@@ -265,7 +265,15 @@ const A = criarApp({
     receber: (el) => { A.store.commit((s) => Object.assign(s.viagens.find((v) => v.id === el.dataset.id), { recebido: true, recebidoEm: today() })); toast('Frete marcado como recebido'); },
     novoAbast: (el) => { editar({ titulo: 'Abastecimento', colecao: 'abastecimentos', campos: CAMPOS_ABAST, prefixo: 'ab', inicial: el.dataset.v ? { veiculoId: el.dataset.v } : null, antesDeSalvar: (a, antes) => { completarTres(a); if (!antes) a.conferido = true; } }); ligarTres('fed'); ligarVinculo('fed'); },
     editarAbast: (el) => { editar({ titulo: 'Abastecimento', colecao: 'abastecimentos', campos: CAMPOS_ABAST, doc: S().abastecimentos.find((x) => x.id === el.dataset.id), antesDeSalvar: (a) => { completarTres(a); } }); ligarTres('fed'); ligarVinculo('fed'); },
-    novaDespesa: () => { editar({ titulo: 'Despesa', colecao: 'despesas', campos: CAMPOS_DESPESA, prefixo: 'dp', antesDeSalvar: (d, antes) => { if (!antes) d.conferido = true; } }); ligarVinculo('fed'); },
+    novaDespesa: (el) => {
+      const tipos = [['combustivel', 'Combustível', 'fuel'], ...D.CATEGORIAS.map(([k, n]) => [k, n, 'receipt'])];
+      modal({ title: 'Nova despesa', body: `<div class="tiny muted mb">Despesa de uma viagem? Lance pela página da viagem (Viagens › abrir).</div><div class="grid g2" style="gap:10px">${tipos.map(([k, n, ic]) => `<button class="acao-grande" data-act="tipo" data-k="${k}"><span class="ic">${icon(ic)}</span><span class="grow"><div class="t">${n}</div></span></button>`).join('')}</div>`,
+        handlers: { tipo: (b) => {
+          closeModal();
+          if (b.dataset.k === 'combustivel') return ACOES.novoAbast({ dataset: { v: el?.dataset?.v || '' } });
+          editar({ titulo: D.nomeCategoria(b.dataset.k), colecao: 'despesas', campos: CAMPOS_DESPESA.filter((c) => c.k !== 'categoria'), prefixo: 'dp', antesDeSalvar: (d, antes) => { d.categoria = b.dataset.k; if (!antes) d.conferido = true; } }); ligarVinculo('fed');
+        } } });
+    },
     editarDespesa: (el) => editar({ titulo: 'Despesa', colecao: 'despesas', campos: CAMPOS_DESPESA, doc: S().despesas.find((x) => x.id === el.dataset.id) }),
     novaManut: (el) => editar({ titulo: 'Manutenção', colecao: 'manutencoes', campos: CAMPOS_MANUT, prefixo: 'mn', inicial: el.dataset.v ? { veiculoId: el.dataset.v, km: D.kmAtual(S(), el.dataset.v) } : null }),
     editarManut: (el) => editar({ titulo: 'Manutenção', colecao: 'manutencoes', campos: CAMPOS_MANUT, doc: S().manutencoes.find((x) => x.id === el.dataset.id) }),
@@ -275,6 +283,12 @@ const A = criarApp({
     editarMotorista: (el) => editar({ titulo: 'Motorista', colecao: 'motoristas', campos: CAMPOS_MOTORISTA, doc: S().motoristas.find((x) => x.id === el.dataset.id) }),
     novoCliente: () => editar({ titulo: 'Cliente', colecao: 'clientes', campos: CAMPOS_CLIENTE, prefixo: 'cl' }),
     editarCliente: (el) => editar({ titulo: 'Cliente', colecao: 'clientes', campos: CAMPOS_CLIENTE, doc: S().clientes.find((x) => x.id === el.dataset.id) }),
+    grupo: (el, e) => { if (e?.target.closest('button')) return; const c = el.closest('.grupo'); c.classList.toggle('aberto'); if (c.classList.contains('aberto')) gruposAbertos.add(el.dataset.id); else gruposAbertos.delete(el.dataset.id); },
+    conferirGrupo: (el) => {
+      const id = el.dataset.id;
+      A.store.commit((s) => { for (const x of D.aConferir(s)) { const col = colDe(x); if ((col === 'viagens' ? x.id : x.viagemId || '') === id) s[col].find((y) => y.id === x.id).conferido = true; } });
+      gruposAbertos.delete(id); toast(id ? 'Viagem conferida' : 'Conferido');
+    },
     conferir: (el) => { const [col, id] = el.dataset.ref.split(':'); A.store.commit((s) => { s[col].find((x) => x.id === id).conferido = true; }); toast('Conferido'); },
     conferirTudo: async () => {
       const itens = D.aConferir(S());
@@ -478,52 +492,62 @@ function vViagem({ id }) {
 }
 
 // ---------- Conferir lançamentos dos motoristas ----------
+const gruposAbertos = new Set();
+const colDe = (x) => (x.origem !== undefined && x.destino !== undefined ? 'viagens' : x.forma !== undefined ? 'recebimentos' : x.litros !== undefined ? 'abastecimentos' : 'despesas');
 function vConferir() {
   const s = S();
-  const itens = sortBy(D.aConferir(s).map((x) => {
-    const col = x.origem !== undefined && x.destino !== undefined ? 'viagens' : x.forma !== undefined ? 'recebimentos' : x.litros !== undefined ? 'abastecimentos' : 'despesas';
-    return { x, col, data: col === 'viagens' ? D.dataViagem(x) : x.data };
-  }), (i) => i.data, true);
-  const desc = ({ x, col }) => col === 'viagens' ? `Viagem #${x.numero || ''} ${esc(x.origem)} → ${esc(x.destino)} · ${D.kmViagem(x) ? int(D.kmViagem(x)) + ' km' : 'km não informado'}${+x.valorFrete ? '' : ' · <b>definir valor do frete</b>'}`
-    : col === 'abastecimentos' ? `Abastecimento · ${x.litros} l · ${int(x.km)} km${x.posto ? ' · ' + esc(x.posto) : ''}` : col === 'recebimentos' ? `Recebimento · ${esc(D.nomeForma(x.forma))} · ficou com ${x.com === 'motorista' ? 'o motorista' : 'o dono'}` : `${esc(D.nomeCategoria(x.categoria))}${x.descricao ? ' · ' + esc(x.descricao) : ''}`;
+  const itens = D.aConferir(s).map((x) => { const col = colDe(x); return { x, col, data: col === 'viagens' ? D.dataViagem(x) : x.data, grupo: col === 'viagens' ? x.id : x.viagemId || '' }; });
+  const grupos = new Map();
+  for (const it of itens) { if (!grupos.has(it.grupo)) grupos.set(it.grupo, []); grupos.get(it.grupo).push(it); }
+  const lista = sortBy([...grupos.entries()].map(([id, its]) => ({ id, v: id ? s.viagens.find((v) => v.id === id) : null, its: sortBy(its, (i) => (i.col === 'viagens' ? '0' : '1') + i.data) })), (g) => (g.v ? g.v.dataSaida || '' : '0000'), true);
+  const desc = ({ x, col }) => col === 'viagens' ? `Viagem encerrada pelo motorista · ${D.kmViagem(x) ? int(D.kmViagem(x)) + ' km' : 'km não informado'}${+x.valorFrete ? '' : ' · <b>definir valor do frete</b>'}`
+    : col === 'abastecimentos' ? `Combustível · ${(+x.litros || 0).toLocaleString('pt-BR')} l${x.km ? ' · ' + int(x.km) + ' km' : ''}${x.posto ? ' · ' + esc(x.posto) : ''}` : col === 'recebimentos' ? `Receita · ${esc(D.nomeForma(x.forma))} · ficou com ${x.com === 'motorista' ? 'o motorista' : 'o dono'}` : `${esc(D.nomeCategoria(x.categoria))}${x.descricao ? ' · ' + esc(x.descricao) : ''}`;
   const act = { viagens: 'abrirViagem', abastecimentos: 'editarAbast', despesas: 'editarDespesa', recebimentos: 'editarReceita' };
-  return A.tela('Conferir', `${A.pageHead('Conferir lançamentos', 'Tudo o que os motoristas lançaram pelo app. Depois de conferido, o motorista não altera mais.', itens.length ? `<button class="btn" data-act="conferirTudo">${icon('check')} Conferir tudo</button>` : '')}
-    <div class="card pad-0"><div class="list" style="padding:0 16px">${itens.map((i) => `<div class="li"><div class="avatar">${icon(i.col === 'viagens' ? 'map' : i.col === 'abastecimentos' ? 'fuel' : i.col === 'recebimentos' ? 'money' : 'receipt')}</div>
-      <div class="grow click" data-act="${act[i.col]}" data-id="${i.x.id}"><div class="t small">${desc(i)}</div><div class="s">${dateShort(i.data)} · ${esc(D.motorista(s, i.x.motoristaId)?.nome || '—')} · ${esc(D.veiculo(s, i.x.veiculoId)?.placa || '—')}${i.x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ''}</div></div>
-      ${i.col !== 'viagens' ? `<b class="num">${money(i.x.valor)}</b>` : ''}<button class="btn sm" data-act="conferir" data-ref="${i.col}:${i.x.id}">${icon('check')}</button></div>`).join('') || empty('Tudo conferido. 👍', 'check')}</div></div>`);
+  const linha = (i) => `<div class="li"><div class="avatar">${icon(i.col === 'viagens' ? 'map' : i.col === 'abastecimentos' ? 'fuel' : i.col === 'recebimentos' ? 'money' : 'receipt')}</div>
+      <div class="grow click" data-act="${act[i.col]}" data-id="${i.x.id}"><div class="t small">${desc(i)}</div><div class="s">${dateShort(i.data)}${i.x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ''}</div></div>
+      ${i.col !== 'viagens' ? `<b class="num ${i.col === 'recebimentos' ? 'up' : ''}">${money(i.x.valor)}</b>` : ''}<button class="btn ghost sm" data-act="conferir" data-ref="${i.col}:${i.x.id}" title="Conferir este">${icon('check')}</button></div>`;
+  const cab = (g) => {
+    const v = g.v, mo = D.motorista(s, v?.motoristaId || g.its[0]?.x.motoristaId), ve = D.veiculo(s, v?.veiculoId || g.its[0]?.x.veiculoId);
+    const desp = sum(g.its.filter((i) => i.col === 'abastecimentos' || i.col === 'despesas'), (i) => +i.x.valor), rec = sum(g.its.filter((i) => i.col === 'recebimentos'), (i) => +i.x.valor);
+    return `<div class="row between gap-s click" data-act="grupo" data-id="${g.id}" style="padding:14px 16px;flex-wrap:wrap">
+      <div class="row gap-s grow" style="min-width:220px"><span class="grupo-seta">▸</span><div><div class="t"><b>${v ? `#${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}` : 'Lançamentos sem viagem'}</b> ${v ? badge(D.STATUS_VIAGEM[v.status]?.label || '', D.STATUS_VIAGEM[v.status]?.tom) : ''}</div>
+        <div class="s small muted">${esc(mo?.nome || '—')} · ${esc(ve?.placa || '—')}${v ? ' · ' + dateShort(v.dataSaida) + (v.dataChegada ? ' a ' + dateShort(v.dataChegada) : '') : ''} · ${plural(g.its.length, 'item', 'itens')} para conferir${desp ? ' · despesas ' + money0(desp) : ''}${rec ? ' · receitas ' + money0(rec) : ''}</div></div></div>
+      <div class="row gap-s">${v ? `<button class="btn ghost sm" data-act="abrirViagem" data-id="${v.id}">Abrir viagem</button>` : ''}<button class="btn sm" data-act="conferirGrupo" data-id="${g.id}">${icon('check')} Conferir ${v ? 'viagem' : 'todos'}</button></div></div>`;
+  };
+  return A.tela('Conferir', `${A.pageHead('Conferir lançamentos', 'O que os motoristas lançaram pelo app, por viagem. Clique na viagem para ver os lançamentos. Depois de conferido, o motorista não altera mais.', itens.length ? `<button class="btn ghost" data-act="conferirTudo">${icon('check')} Conferir tudo</button>` : '')}
+    <style>.grupo .itens{display:none;border-top:1px solid var(--linha,#e7e2da);padding:0 16px}.grupo.aberto .itens{display:block}.grupo .grupo-seta{display:inline-flex;transition:transform .15s}.grupo.aberto .grupo-seta{transform:rotate(90deg)}</style>
+    <div class="col" style="gap:12px">${lista.map((g) => `<div class="card pad-0 grupo ${gruposAbertos.has(g.id) || lista.length === 1 ? 'aberto' : ''}" data-grupo="${g.id}">${cab(g)}<div class="itens list">${g.its.map(linha).join('')}</div></div>`).join('') || `<div class="card">${empty('Tudo conferido. 👍', 'check')}</div>`}</div>`);
 }
 
-// ---------- Combustível ----------
-function vAbastecimentos({ query }) {
-  const s = S();
-  const p = query.p || '30d';
-  const [de, ate, nome] = D.periodo(p);
-  const ab = sortBy(s.abastecimentos.filter((a) => a.data >= de && a.data <= ate && (!query.v || a.veiculoId === query.v)), (a) => a.data + String(a.km).padStart(9, '0'), true);
-  const litros = sum(ab, (a) => +a.litros), valor = sum(ab, (a) => +a.valor);
-  const porV = s.veiculos.map((v) => ({ v, c: D.consumo(s, v.id, de, ate), l: sum(ab.filter((a) => a.veiculoId === v.id), (a) => +a.litros) })).filter((x) => x.l);
-  return A.tela('Combustível', `${A.pageHead('Combustível', nome, `<button class="btn" data-act="novoAbast">${icon('plus')} Abastecimento</button>`)}${segPeriodo('abastecimentos', p, query.v ? '&v=' + query.v : '')}
-    <div class="grid g4">${kpi('Gasto', money0(valor), plural(ab.length, 'abastecimento'))}${kpi('Litros', int(litros), litros ? `média ${money(valor / litros)}/l` : '—')}
-      ${kpi('Melhor consumo', porV.length ? `${(sortBy(porV.filter((x) => x.c), (x) => -x.c)[0]?.c || 0).toFixed(2)} km/l` : '—', esc(sortBy(porV.filter((x) => x.c), (x) => -x.c)[0]?.v.placa || ''))}
-      ${kpi('Pago pelos motoristas', money0(sum(ab.filter((a) => a.pagoPeloMotorista), (a) => a.valor)), 'reembolso no acerto')}</div>
-    ${porV.length ? `<div class="card mt"><div class="head"><h2>Consumo por veículo</h2><span class="muted small">km/l · tanque cheio</span></div>${hbars(porV.filter((x) => x.c).map((x) => ({ label: x.v.placa + ' · ' + (x.v.modelo || ''), value: x.c, vtxt: x.c.toFixed(2) + ' km/l', sub: `${int(x.l)} litros`, attrs: `data-act="goto" data-h="#/abastecimentos?p=${p}&v=${x.v.id}"` })), (v) => v.toFixed(2))}</div>` : ''}
-    ${query.v ? `<div class="mt"><a href="#/abastecimentos?p=${p}" class="btn ghost sm">${esc(D.veiculo(s, query.v)?.placa)} ✕</a></div>` : ''}
-    <div class="card pad-0 mt"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Data</th><th>Veículo</th><th class="hide-m">Motorista</th><th class="r">Km</th><th class="r">Litros</th><th class="r">Valor</th><th class="r hide-m">R$/l</th><th></th></tr></thead>
-      <tbody>${ab.map((a) => `<tr class="click" data-act="editarAbast" data-id="${a.id}"><td>${dateShort(a.data)}</td><td>${esc(D.veiculo(s, a.veiculoId)?.placa || '—')}</td><td class="hide-m small">${esc(D.motorista(s, a.motoristaId)?.nome || '—')}</td><td class="r">${int(a.km)}</td><td class="r">${(+a.litros).toLocaleString('pt-BR')}</td><td class="r">${money(a.valor)}</td><td class="r hide-m">${a.litros ? money(a.valor / a.litros) : '—'}</td><td>${conferidoBadge(a)}</td></tr>`).join('') || `<tr><td colspan="8">${empty('Nenhum abastecimento no período.', 'fuel')}</td></tr>`}</tbody></table></div></div>`);
-}
-
-// ---------- Despesas ----------
+// ---------- Despesas (combustível é uma das categorias) ----------
 function vDespesas({ query }) {
   const s = S();
-  const p = query.p || '30d';
+  const p = query.p || '30d', c = query.c || '';
   const [de, ate, nome] = D.periodo(p);
-  const ds = sortBy(s.despesas.filter((d) => d.data >= de && d.data <= ate), (d) => d.data, true);
-  const man = s.manutencoes.filter((m) => m.data >= de && m.data <= ate);
-  const porCat = sortBy(D.CATEGORIAS.map(([k, n]) => ({ label: n, value: sum(ds.filter((d) => d.categoria === k), (d) => +d.valor) })).filter((x) => x.value), (x) => -x.value);
-  return A.tela('Despesas', `${A.pageHead('Despesas', `${nome} · despesas de viagem e gerais (manutenção fica em cada veículo)`, `<button class="btn" data-act="novaDespesa">${icon('plus')} Despesa</button>`)}${segPeriodo('despesas', p)}
-    <div class="grid g-2-1"><div class="card"><div class="head"><h2>Por categoria</h2><b>${money0(sum(ds, (d) => d.valor))}</b></div>${porCat.length ? hbars(porCat, money0) : empty('Nenhuma despesa no período.', 'receipt')}</div>
-      <div class="col">${kpi('Manutenção no período', money0(sum(man, (m) => m.valor)), plural(man.length, 'serviço'))}${kpi('Pago pelos motoristas', money0(sum(ds.filter((d) => d.pagoPeloMotorista), (d) => d.valor)), 'reembolso no acerto')}</div></div>
-    <div class="card pad-0 mt"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Data</th><th>Categoria</th><th class="hide-m">Descrição</th><th class="hide-m">Veículo · motorista</th><th class="r">Valor</th><th></th></tr></thead>
-      <tbody>${ds.map((d) => `<tr class="click" data-act="editarDespesa" data-id="${d.id}"><td>${dateShort(d.data)}</td><td>${esc(D.nomeCategoria(d.categoria))}</td><td class="hide-m small">${esc(d.descricao || '')}</td><td class="hide-m small">${esc(D.veiculo(s, d.veiculoId)?.placa || 'geral')}${d.motoristaId ? ' · ' + esc(D.motorista(s, d.motoristaId)?.nome || '') : ''}</td><td class="r">${money(d.valor)}</td><td>${conferidoBadge(d)}</td></tr>`).join('') || `<tr><td colspan="6">${empty('—')}</td></tr>`}</tbody></table></div></div>`);
+  const dentro = (d) => d >= de && d <= ate;
+  const todos = [
+    ...s.abastecimentos.filter((a) => dentro(a.data)).map((a) => ({ x: a, col: 'abastecimentos', cat: 'combustivel', desc: `${(+a.litros || 0).toLocaleString('pt-BR')} l${a.litros ? ' · ' + money(a.valor / a.litros) + '/l' : ''}${a.posto ? ' · ' + a.posto : ''}` })),
+    ...s.despesas.filter((d) => dentro(d.data)).map((d) => ({ x: d, col: 'despesas', cat: d.categoria || 'outros', desc: d.descricao || '' })),
+  ];
+  const lista = sortBy(todos.filter((i) => !c || i.cat === c), (i) => i.x.data + i.x.id, true);
+  const nomeCat = (k) => (k === 'combustivel' ? 'Combustível' : D.nomeCategoria(k));
+  const cats = sortBy(Object.values(todos.reduce((g, i) => { (g[i.cat] ||= { k: i.cat, v: 0, n: 0 }).v += +i.x.valor || 0; g[i.cat].n++; return g; }, {})), (x) => -x.v);
+  const ab = lista.filter((i) => i.col === 'abastecimentos'), litros = sum(ab, (i) => +i.x.litros || 0), vAb = sum(ab, (i) => +i.x.valor);
+  const man = s.manutencoes.filter((m) => dentro(m.data));
+  const porV = s.veiculos.map((v) => ({ v, c: D.consumoGeral(s, v.id, de, ate) })).filter((x) => x.c);
+  const qs = (o) => `#/despesas?p=${o.p ?? p}${(o.c ?? c) ? '&c=' + (o.c ?? c) : ''}`;
+  const vg = (x) => x.viagemId && s.viagens.find((v) => v.id === x.viagemId);
+  return A.tela('Despesas', `${A.pageHead('Despesas', `${nome} · combustível, pedágio, alimentação e o resto (manutenção de oficina fica em cada veículo)`, `<button class="btn" data-act="novaDespesa">${icon('plus')} Despesa</button>`)}
+    <div class="seg mb" style="max-width:100%;overflow-x:auto">${[['30d', '30 dias'], ['mes', 'Este mês'], ['ant', 'Mês passado'], ['ano', 'Este ano']].map(([v, n]) => `<button class="${p === v ? 'on' : ''}" data-act="goto" data-h="${qs({ p: v })}">${n}</button>`).join('')}</div>
+    <div class="grid g4">${kpi(c ? nomeCat(c) : 'Total', money0(sum(lista, (i) => +i.x.valor)), plural(lista.length, 'lançamento'))}${kpi('Combustível', money0(sum(todos.filter((i) => i.cat === 'combustivel'), (i) => +i.x.valor)), litros ? `${int(litros)} l · média ${money(vAb / litros)}/l` : '—')}
+      ${kpi('Pago pelos motoristas', money0(sum(lista.filter((i) => i.x.pagoPeloMotorista), (i) => +i.x.valor)), 'entra no acerto')}${kpi('Manutenção (oficina)', money0(sum(man, (m) => +m.valor)), plural(man.length, 'serviço'))}</div>
+    <div class="grid g-2-1 mt"><div class="card"><div class="head"><h2>Por categoria</h2><span class="muted small">clique para filtrar</span></div>
+      ${cats.length ? hbars(cats.map((x) => ({ label: nomeCat(x.k), value: x.v, sub: plural(x.n, 'lançamento'), color: x.k === c ? 'var(--destaque)' : undefined, attrs: `data-act="goto" data-h="${qs({ c: x.k === c ? '' : x.k })}"` })), money0) : empty('Nenhuma despesa no período.', 'receipt')}
+      ${c ? `<div class="mt-s"><a class="btn ghost sm" href="${qs({ c: '' })}">${esc(nomeCat(c))} ✕</a></div>` : ''}</div>
+      <div class="card"><div class="head"><h2>Consumo por caminhão</h2><span class="muted small">km/l</span></div>${porV.length ? hbars(sortBy(porV, (x) => -x.c).map((x) => ({ label: D.nomeVeiculo(x.v), value: x.c, vtxt: x.c.toFixed(2).replace('.', ',') + ' km/l', attrs: `data-act="goto" data-h="#/veiculo/${x.v.id}"` })), (v) => v.toFixed(2), { color: 'var(--s3)' }) : empty('Lance litros e km para ver o consumo.', 'fuel')}</div></div>
+    <div class="card pad-0 mt"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Data</th><th>Categoria</th><th class="hide-m">Detalhe</th><th class="hide-m">Viagem · caminhão</th><th class="r">Valor</th><th></th></tr></thead>
+      <tbody>${lista.map((i) => { const v = vg(i.x); return `<tr class="click" data-act="${i.col === 'abastecimentos' ? 'editarAbast' : 'editarDespesa'}" data-id="${i.x.id}"><td>${dateShort(i.x.data)}</td><td>${esc(nomeCat(i.cat))}</td><td class="hide-m small">${esc(i.desc)}${i.x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ''}</td>
+        <td class="hide-m small">${v ? `#${v.numero || ''} ${esc(v.destino)} · ` : ''}${esc(D.veiculo(s, i.x.veiculoId)?.placa || 'geral')}${i.x.motoristaId ? ' · ' + esc(D.motorista(s, i.x.motoristaId)?.nome || '') : ''}</td><td class="r">${money(i.x.valor)}</td><td>${conferidoBadge(i.x)}</td></tr>`; }).join('') || `<tr><td colspan="6">${empty('—')}</td></tr>`}</tbody></table></div></div>`);
 }
 
 // ---------- Veículos ----------
@@ -591,12 +615,11 @@ function vMotorista({ id, query }) {
       `<a class="btn ghost" target="_blank" rel="noopener" href="${waLink(m.telefone, texto)}">${icon('whatsapp')} Enviar acerto</a><button class="btn ghost" data-act="editarMotorista" data-id="${id}">${icon('edit')} Editar</button>`)}
     ${segPeriodo(`motorista/${id}`, p)}
     <div class="grid g4">${kpi('Comissões', money0(ac.comissoes), plural(ac.viagens.length, 'viagem', 'viagens'))}${kpi('Pagou na estrada', money0(ac.reembolsos), 'gastos pagos por ele')}${kpi('Ficou com ele', money0(ac.adiantamentos + ac.emEspecie), 'adiantamento + frete em espécie')}${kpi('Saldo do acerto', `<span class="${ac.saldo >= 0 ? '' : 'down'}">${money0(Math.abs(ac.saldo))}</span>`, ac.saldo >= 0 ? 'a empresa paga ao motorista' : 'o motorista devolve à empresa')}</div>
-    <div class="card pad-0 mt"><div style="padding:16px 16px 0"><h2>Detalhe</h2></div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Data</th><th>Item</th><th class="r">Valor</th></tr></thead><tbody>
-      ${ac.viagens.map((v) => `<tr><td>${dateShort(D.dataViagem(v))}</td><td>Comissão ${D.pctViagem(v, s)}% · #${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)} (${money0(v.valorFrete)})</td><td class="r up">${money(D.comissao(v, s))}</td></tr>`).join('')}
-      ${ac.pagos.map((x) => `<tr><td>${dateShort(x.data)}</td><td>Pagou · ${esc(x.descricao)}</td><td class="r up">${money(x.valor)}</td></tr>`).join('')}
-      ${ac.especie.map((x) => `<tr><td>${dateShort(x.data)}</td><td>Ficou com ele · ${esc(x.descricao)}</td><td class="r down">−${money(x.valor)}</td></tr>`).join('')}
-      ${ac.adiant.map((v) => `<tr><td>${dateShort(v.dataSaida)}</td><td>Adiantamento · viagem #${v.numero}</td><td class="r down">−${money(v.adiantamento)}</td></tr>`).join('')}
-      </tbody><tfoot><tr><td></td><td>Saldo</td><td class="r">${money(ac.saldo)}</td></tr></tfoot></table></div></div>`, { back: true });
+    <div class="card pad-0 mt"><div style="padding:16px 16px 0"><h2>Acerto por viagem</h2></div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Viagem</th><th class="r hide-m">Comissão</th><th class="r hide-m">Pagou</th><th class="r hide-m">Ficou com ele</th><th class="r">Saldo</th><th></th></tr></thead><tbody>
+      ${ac.porViagem.map((x) => `<tr class="click" data-act="abrirViagem" data-id="${x.v.id}"><td><b>#${x.v.numero || ''} ${esc(x.v.origem)} → ${esc(x.v.destino)}</b><div class="tiny muted">${dateShort(x.v.dataSaida)} a ${dateShort(x.v.dataChegada)} · frete ${money0(x.v.valorFrete)} · ${D.pctViagem(x.v, s)}%</div></td>
+        <td class="r hide-m">${money(x.comissao)}</td><td class="r hide-m">${money(x.pagou)}</td><td class="r hide-m">${money(x.ficou)}</td><td class="r"><b class="${x.saldo >= 0 ? 'up' : 'down'}">${x.saldo >= 0 ? 'receber ' : 'devolve '}${money(Math.abs(x.saldo))}</b></td><td>${x.v.fechadoEm ? badge('Fechada', 'ok') : badge('Aberta', 'warn')}</td></tr>`).join('') || `<tr><td colspan="6">${empty('Nenhuma viagem concluída no período.', 'map')}</td></tr>`}
+      ${ac.foraDeViagem.map((x) => `<tr><td>${esc(x.descricao)}<div class="tiny muted">${dateShort(x.data)} · fora de viagem</div></td><td class="hide-m"></td><td class="hide-m"></td><td class="hide-m"></td><td class="r ${x.sinal > 0 ? 'up' : 'down'}">${x.sinal > 0 ? '' : '−'}${money(x.valor)}</td><td></td></tr>`).join('')}
+      </tbody><tfoot><tr><td>Total do período</td><td class="r hide-m">${money(ac.comissoes)}</td><td class="r hide-m">${money(ac.reembolsos)}</td><td class="r hide-m">${money(ac.adiantamentos + ac.emEspecie)}</td><td class="r">${ac.saldo >= 0 ? 'empresa paga ' : 'devolve '}${money(Math.abs(ac.saldo))}</td><td></td></tr></tfoot></table></div></div>`, { back: true });
 }
 
 // ---------- Clientes ----------

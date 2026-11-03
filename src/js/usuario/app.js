@@ -2,7 +2,7 @@
 import { criarApp } from '../core/app.js';
 import { formHTML, lerCampos } from '../core/form.js';
 import * as D from '../dominio.js';
-import { money, money0, date, dateShort, today, esc, sortBy, uid, plural, diffDays } from '../core/fmt.js';
+import { money, money0, date, dateShort, today, esc, sortBy, uid, plural, diffDays, sum } from '../core/fmt.js';
 import { icon, badge, empty, modal, closeModal, toast, kpi, confirmar } from '../core/ui.js';
 import { ligarTres, completarTres } from '../tres.js';
 
@@ -119,7 +119,8 @@ function vInicio() {
   const m = eu();
   const atual = viagemAtual();
   const planejadas = sortBy(meus('viagens').filter((v) => v.status === 'planejada'), (v) => v.dataSaida);
-  const ultimos = sortBy([...meus('abastecimentos'), ...meus('despesas'), ...meus('recebimentos')], (x) => x.data + x.id, true).slice(0, 5);
+  const vl = viagemLanc();
+  const ultimos = sortBy([...meus('abastecimentos'), ...meus('despesas'), ...meus('recebimentos')].filter((x) => (vl ? x.viagemId === vl.id : true)), (x) => x.data + x.id, true).slice(0, vl ? 50 : 5);
   const cnh = m?.cnhValidade ? diffDays(m.cnhValidade, today()) : null;
   return A.tela('Início', `
     ${A.pageHead(`Olá, ${esc((m?.nome || '').split(' ')[0])}`, esc(s.meta.empresa || ''))}
@@ -134,7 +135,7 @@ function vInicio() {
       <button class="acao-grande" data-act="despesa"><span class="ic" style="background:var(--destaque)">${icon('receipt')}</span><span class="grow"><div class="t">Despesa</div><div class="s">Pedágio, refeição, borracharia…</div></span></button>
       <button class="acao-grande" data-act="receber" style="grid-column:1/-1"><span class="ic" style="background:var(--s1)">${icon('money')}</span><span class="grow"><div class="t">Recebi</div><div class="s">Dinheiro, carta frete ou pagamento do frete</div></span></button>
     </div>
-    <h2 class="mt">Últimos lançamentos</h2>
+    <h2 class="mt">${vl ? `Lançamentos da viagem ${esc(vl.origem)} → ${esc(vl.destino)}` : 'Últimos lançamentos'}</h2>
     <div class="card pad-0 mt-s"><div class="list" style="padding:0 16px">${ultimos.map(linha).join('') || empty('Seus abastecimentos e despesas aparecem aqui.', 'list')}</div></div>`);
 }
 
@@ -146,23 +147,44 @@ const linha = (x) => {
     ${x.conferido ? badge('Conferido', 'ok') : `<button class="iconbtn" data-act="apagarLanc" data-ref="${col}:${x.id}" aria-label="Apagar">${icon('trash')}</button>`}</div>`;
 };
 
+// Lançamentos agrupados por viagem (os sem viagem ficam no fim)
+const cabViagem = (v) => {
+  const st = D.STATUS_VIAGEM[v.status];
+  return `<div class="row between gap-s" style="padding:14px 16px 6px"><div><b>${esc(v.origem)} → ${esc(v.destino)}</b><div class="small muted">${dateShort(v.dataSaida)}${v.dataChegada ? ' a ' + dateShort(v.dataChegada) : ''}${D.kmViagem(v) ? ' · ' + km(D.kmViagem(v)) : ''} · ${esc(D.veiculo(S(), v.veiculoId)?.placa || '')}</div></div>${v.fechadoEm ? badge('Fechada', 'ok') : badge(st?.label || '', st?.tom)}</div>`;
+};
 function vLancamentos() {
-  const viagens = sortBy(meus('viagens'), (v) => v.dataSaida, true).slice(0, 30);
-  const lanc = sortBy([...meus('abastecimentos'), ...meus('despesas'), ...meus('recebimentos')], (x) => x.data + x.id, true).slice(0, 80);
-  return A.tela('Lançamentos', `${A.pageHead('Meus lançamentos', 'Depois de conferido pela empresa, o lançamento não pode mais ser alterado.')}
-    <div class="card pad-0"><div class="list" style="padding:0 16px">${lanc.map(linha).join('') || empty('Nada lançado ainda.', 'list')}</div></div>
-    <h2 class="mt">Minhas viagens</h2>
-    <div class="card pad-0 mt-s"><div class="list" style="padding:0 16px">${viagens.map((v) => `<div class="li"><div class="avatar">${icon('map')}</div><div class="grow"><div class="t small">${esc(v.origem)} → ${esc(v.destino)}</div><div class="s">${dateShort(v.dataSaida)}${v.dataChegada ? ' a ' + dateShort(v.dataChegada) : ''} · ${D.kmViagem(v) ? km(D.kmViagem(v)) : esc(D.STATUS_VIAGEM[v.status]?.label || '')}</div></div>${v.conferido ? badge('Conferida', 'ok') : badge(D.STATUS_VIAGEM[v.status]?.label || '', D.STATUS_VIAGEM[v.status]?.tom)}</div>`).join('') || empty('—', 'map')}</div></div>`);
+  const lanc = [...meus('abastecimentos'), ...meus('despesas'), ...meus('recebimentos')];
+  const ids = new Set(lanc.map((x) => x.viagemId).filter(Boolean));
+  const viagens = sortBy(meus('viagens').filter((v) => ids.has(v.id) || v.status !== 'concluida' || !v.fechadoEm), (v) => v.dataSaida, true).slice(0, 30);
+  const soltos = sortBy(lanc.filter((x) => !x.viagemId || !viagens.some((v) => v.id === x.viagemId)), (x) => x.data + x.id, true);
+  const bloco = (v) => {
+    const its = sortBy(lanc.filter((x) => x.viagemId === v.id), (x) => x.data + x.id, true);
+    const desp = sum(its.filter((x) => x.forma === undefined), (x) => +x.valor), rec = sum(its.filter((x) => x.forma !== undefined), (x) => +x.valor);
+    return `<div class="card pad-0 mt-s">${cabViagem(v)}<div class="list" style="padding:0 16px">${its.map(linha).join('') || '<div class="small muted" style="padding:10px 0">Nada lançado nesta viagem.</div>'}</div>
+      ${its.length ? `<div class="small ink2" style="padding:8px 16px 14px">Despesas ${money(desp)} · recebido ${money(rec)}</div>` : ''}</div>`;
+  };
+  return A.tela('Lançamentos', `${A.pageHead('Meus lançamentos', 'Por viagem. Depois de conferido pela empresa, o lançamento não pode mais ser alterado.')}
+    ${viagens.map(bloco).join('') || `<div class="card">${empty('Nenhuma viagem ainda.', 'map')}</div>`}
+    ${soltos.length ? `<h2 class="mt">Fora de viagem</h2><div class="card pad-0 mt-s"><div class="list" style="padding:0 16px">${soltos.map(linha).join('')}</div></div>` : ''}`);
 }
 
 function vAcerto({ query }) {
   const p = query.p || 'mes';
   const [de, ate, nome] = D.periodo(p);
   const ac = D.acerto(S(), A.store.meuRef(), de, ate);
+  const atual = viagemLanc();
+  const parcial = atual && atual.status !== 'concluida' ? D.fechamento(S(), atual) : null;
+  const linhaV = (x) => `<div class="card pad-0 mt-s">${cabViagem(x.v)}<div class="tbl-wrap" style="padding:0 8px"><table class="tbl"><tbody>
+      <tr><td>Comissão ${x.f.pct}% sobre ${money(x.f.frete)}</td><td class="r up">${money(x.comissao)}</td></tr>
+      <tr><td>O que paguei na viagem</td><td class="r up">${money(x.pagou)}</td></tr>
+      <tr><td>O que ficou comigo (frete + adiantamento)</td><td class="r down">−${money(x.ficou)}</td></tr>
+    </tbody><tfoot><tr><td>${x.saldo >= 0 ? 'A receber da empresa' : 'A devolver à empresa'}</td><td class="r"><b>${money(Math.abs(x.saldo))}</b></td></tr></tfoot></table></div></div>`;
   return A.tela('Meu acerto', `${A.pageHead('Meu acerto', `${nome} · ${date(de)} a ${date(ate)}`)}
     <div class="seg mb">${[['mes', 'Este mês'], ['ant', 'Mês passado']].map(([v, n]) => `<button class="${p === v ? 'on' : ''}" data-act="goto" data-h="#/acerto?p=${v}">${n}</button>`).join('')}</div>
-    <div class="card dark col"><div class="label">Saldo previsto</div><div class="grande">${money(Math.abs(ac.saldo))}</div><div class="small">${ac.saldo >= 0 ? 'a receber da empresa' : 'a devolver à empresa'} · valores confirmados no fechamento com a empresa</div></div>
-    <div class="grid g2 mt" style="gap:12px">${kpi('Comissões', money0(ac.comissoes), plural(ac.viagens.length, 'viagem', 'viagens'))}${kpi('Reembolsos', money0(ac.reembolsos), 'o que paguei')}${kpi('Adiantamentos', money0(ac.adiantamentos), 'já recebidos')}${kpi('Frete comigo', money0(ac.emEspecie), 'dinheiro / carta frete')}</div>
+    <div class="card dark col"><div class="label">Saldo do período</div><div class="grande">${money(Math.abs(ac.saldo))}</div><div class="small">${ac.saldo >= 0 ? 'a receber da empresa' : 'a devolver à empresa'} · ${plural(ac.porViagem.length, 'viagem', 'viagens')} · valores confirmados no fechamento com a empresa</div></div>
+    ${parcial ? `<h2 class="mt">Viagem em andamento</h2><div class="card pad-0 mt-s">${cabViagem(atual)}<div class="small" style="padding:0 16px 14px">Até agora: ficou comigo ${money(parcial.dinheiroMotorista)} · paguei ${money(parcial.gastosMotorista)} · comissão prevista ${money(parcial.comissao)}</div></div>` : ''}
+    <h2 class="mt">Por viagem</h2>${ac.porViagem.map(linhaV).join('') || `<div class="card mt-s">${empty('Nenhuma viagem concluída no período.', 'map')}</div>`}
+    ${ac.foraDeViagem.length ? `<h2 class="mt">Fora de viagem</h2><div class="card pad-0 mt-s"><div class="list" style="padding:0 16px">${ac.foraDeViagem.map((x) => `<div class="li"><div class="grow"><div class="t small">${esc(x.descricao)}</div><div class="s">${dateShort(x.data)}</div></div><b class="num small">${x.sinal > 0 ? '' : '−'}${money(x.valor)}</b></div>`).join('')}</div></div>` : ''}
     <div class="tiny muted mt">A comissão aparece quando a empresa informa o valor do frete da viagem.</div>`);
 }
 

@@ -164,7 +164,21 @@ export function acerto(s, mid, de, ate) {
   const especie = fs.flatMap(({ v, f }) => f.recs.filter((x) => x.com === 'motorista').map((x) => ({ data: dataViagem(v), descricao: `${nomeForma(x.forma)} · viagem #${v.numero}`, valor: +x.valor })));
   const r = { viagens, adiant, pagos, especie, comissoes: sum(viagens, (v) => comissao(v, s)), reembolsos: sum(pagos, (x) => x.valor), adiantamentos: sum(adiant, (v) => +v.adiantamento), emEspecie: sum(especie, (x) => x.valor) };
   r.saldo = r.comissoes + r.reembolsos - r.adiantamentos - r.emEspecie;
+  // o mesmo acerto, viagem por viagem (saldo > 0 → a empresa paga ao motorista; < 0 → ele devolve)
+  r.porViagem = sortBy(fs.map(({ v, f }) => ({ v, f, comissao: f.comissao, pagou: f.gastosMotorista, ficou: f.comMotorista + f.adiantamento, saldo: -f.saldo })), (x) => dataViagem(x.v), true);
+  r.foraDeViagem = [
+    ...pagos.slice(sum(fs, ({ f }) => f.custos.filter((c) => c.pagoMotorista).length)).map((x) => ({ ...x, sinal: 1 })),
+    ...adiant.filter((v) => !ids.has(v.id)).map((v) => ({ data: v.dataSaida, descricao: `Adiantamento · viagem #${v.numero || ''} ${v.destino} (em andamento)`, valor: +v.adiantamento, sinal: -1 })),
+  ];
   return r;
+}
+
+// Agrupa lançamentos pela viagem a que pertencem (os sem viagem ficam no fim, com v = null)
+export function porViagem(s, itens) {
+  const g = new Map();
+  for (const it of itens) { const k = it.x?.viagemId || it.viagemId || ''; if (!g.has(k)) g.set(k, []); g.get(k).push(it); }
+  const out = [...g.entries()].map(([k, lista]) => ({ v: k ? s.viagens.find((v) => v.id === k) || null : null, id: k, itens: lista }));
+  return sortBy(out, (x) => (x.v ? (x.v.dataSaida || '') : '0000'), true);
 }
 
 // Todos os custos do período, item por item (é o "extrato" do Painel). Soma = resultado().custos
