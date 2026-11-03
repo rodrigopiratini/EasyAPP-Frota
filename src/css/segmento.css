@@ -1,0 +1,11 @@
+/* Cores da marca EasyApp Frota (sobrepõem src/css/base.css) */
+:root {
+  --primaria: #1D5C4D;
+  --primaria-escura: #0E2F28;
+  --destaque: #E8930C;
+  --destaque-claro: #FCE9C8;
+  --fundo: #F4F6F5;
+  --surface-2: #EAEFED;
+  --line: #DCE3E0;
+  --s1: #1D5C4D; --s2: #E8930C; --s3: #3B7DD8;
+}
