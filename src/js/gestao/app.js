@@ -209,7 +209,7 @@ const A = criarApp({
   rotas: [['/painel', vPainel], ['/viagens', vViagens], ['/viagem/:id', vViagem], ['/conferir', vConferir], ['/abastecimentos', (a) => vDespesas({ ...a, query: { ...a.query, c: 'combustivel' } })], ['/despesas', vDespesas],
     ['/veiculos', vVeiculos], ['/veiculo/:id', vVeiculo], ['/motoristas', vMotoristas], ['/motorista/:id', vMotorista], ['/clientes', vClientes]],
   camposEmpresa: [['cidade', 'Cidade/UF'], ['cnpj', 'CNPJ'], ['whatsapp', 'WhatsApp da empresa', '5554999999999']],
-  topoDireita: (s) => `<a href="#/conferir" style="color:#fff;position:relative">${icon('check')}${D.aConferir(s).length ? `<span class="badge dot" style="position:absolute;top:-6px;right:-8px">${D.aConferir(s).length}</span>` : ''}</a>`,
+  topoDireita: (s) => `<a href="#/conferir" aria-label="Conferir" style="color:#fff;position:relative;display:inline-grid;place-items:center;width:34px;height:34px">${icon('check')}${D.aConferir(s).length ? `<span class="badge dot" style="position:absolute;top:-4px;left:22px;font-size:10px;padding:1px 6px">${D.aConferir(s).length}</span>` : ''}</a>`,
   aoMudar: (msg, externo, info) => {
     if (!externo || !info?.doc) return;
     const m = D.motorista(S(), info.doc.motoristaId)?.nome?.split(' ')[0] || 'Motorista';
