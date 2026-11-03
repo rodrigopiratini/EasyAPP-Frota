@@ -186,7 +186,7 @@ function editarVeiculo(doc) {
   // o motorista do caminhão fica no cadastro do motorista (veículo habitual)
   const comVenc = doc ? { ...doc, motoristaId: S().motoristas.find((m) => m.veiculoId === doc.id)?.id || '', ...Object.fromEntries(D.VENCIMENTOS.map(([k]) => ['v_' + k, doc.venc?.[k] || ''])) } : null;
   let motoristaId = '';
-  editar({ titulo: 'Veículo', colecao: 'veiculos', campos: [...CAMPOS_VEICULO, ...CAMPOS_VENC], doc: comVenc, prefixo: 've',
+  editar({ titulo: doc ? `Caminhão ${doc.placa}` : 'Caminhão', colecao: 'veiculos', campos: [...CAMPOS_VEICULO, ...CAMPOS_VENC], doc: comVenc, prefixo: 've',
     antesDeApagar: travaUso('veiculoId', 'Este caminhão', 'Para tirar da frota sem perder nada, desmarque "Em operação" e salve.'),
     antesDeSalvar: (v) => { motoristaId = v.motoristaId; delete v.motoristaId; v.venc = {}; for (const [k] of D.VENCIMENTOS) { if (v['v_' + k]) v.venc[k] = v['v_' + k]; delete v['v_' + k]; } },
     onSalvo: (v) => {
@@ -296,7 +296,7 @@ const A = criarApp({
     novoVeiculo: () => editarVeiculo(null),
     editarVeiculo: (el) => editarVeiculo(S().veiculos.find((v) => v.id === el.dataset.id)),
     novoMotorista: () => editar({ titulo: 'Motorista', colecao: 'motoristas', campos: CAMPOS_MOTORISTA, prefixo: 'mo', onSalvo: (m, novo) => { if (novo) toast('Gere o acesso ao app em Configurações › Acesso dos motoristas'); } }),
-    editarMotorista: (el) => editar({ titulo: 'Motorista', colecao: 'motoristas', campos: CAMPOS_MOTORISTA, doc: S().motoristas.find((x) => x.id === el.dataset.id),
+    editarMotorista: (el) => editar({ titulo: `Motorista ${esc(S().motoristas.find((x) => x.id === el.dataset.id)?.nome || '')}`, colecao: 'motoristas', campos: CAMPOS_MOTORISTA, doc: S().motoristas.find((x) => x.id === el.dataset.id),
       antesDeApagar: travaUso('motoristaId', 'Este motorista', 'Para ele sair da equipe sem perder o histórico, desmarque "Ativo" e salve (e desative o acesso dele em Configurações).') }),
     novoCliente: () => editar({ titulo: 'Cliente', colecao: 'clientes', campos: CAMPOS_CLIENTE, prefixo: 'cl' }),
     editarCliente: (el) => editar({ titulo: 'Cliente', colecao: 'clientes', campos: CAMPOS_CLIENTE, doc: S().clientes.find((x) => x.id === el.dataset.id), antesDeApagar: travaUso('clienteId', 'Este cliente', 'Ele pode ficar cadastrado sem atrapalhar.') }),
@@ -612,7 +612,7 @@ function vVeiculo({ id }) {
   const [de, ate] = D.periodo('ano');
   const ano = D.resultado(s, de, ate).porVeiculo.find((x) => x.v.id === id) || {};
   return A.tela(v.placa, `${A.pageHead(`${esc(v.placa)} <span class="muted" style="font-size:16px">${esc([v.apelido, v.modelo].filter(Boolean).join(' · '))}</span>`, `${esc(D.TIPOS_VEICULO.find((t) => t[0] === v.tipo)?.[1] || '')}${v.ano ? ' · ' + v.ano : ''} · ${km(D.kmAtual(s, id))}`,
-      `<button class="btn ghost" data-act="editarVeiculo" data-id="${id}">${icon('edit')} Editar</button><button class="btn ghost" data-act="novoAbast" data-v="${id}">${icon('fuel')} Abastecimento</button><button class="btn" data-act="novaManut" data-v="${id}">${icon('wrench')} Manutenção</button>`)}
+      `<button class="btn ghost" data-act="editarVeiculo" data-id="${id}">${icon('edit')} Editar caminhão</button><button class="btn ghost" data-act="novoAbast" data-v="${id}">${icon('fuel')} Abastecimento</button><button class="btn" data-act="novaManut" data-v="${id}">${icon('wrench')} Manutenção</button>`)}
     ${al.length ? `<div class="col mb">${al.map(insightCard).join('')}</div>` : ''}
     <div class="grid g4">${kpi('Resultado no ano', money0(ano.resultado || 0), `margem ${percent(ano.margem || 0)}`)}${kpi('Faturamento no ano', money0(ano.faturamento || 0), plural(ano.viagens || 0, 'viagem', 'viagens'))}${kpi('Consumo médio', D.consumoGeral(s, id) ? D.consumoGeral(s, id).toFixed(2) + ' km/l' : '—', 'viagens e abastecimentos')}${kpi('Custo por km', ano.km ? money(ano.custoKm) : '—', `${int(ano.km || 0)} km no ano`)}</div>
     <div class="card mt"><div class="head"><h2>Resultado por mês</h2></div>${chart({ type: 'columns', height: 190, data: hist.map((h) => ({ label: monthLabel(h.mes), value: Math.max(0, h.resultado || 0), tip: `<b>${monthLabel(h.mes)}</b><br>Faturamento ${money0(h.faturamento || 0)}<br>Custos ${money0(h.custos || 0)}<br>Resultado ${money0(h.resultado || 0)}` })), fmt: moneyK })}</div>
@@ -622,7 +622,7 @@ function vVeiculo({ id }) {
       <div class="card"><div class="head"><h2>Manutenções</h2><b class="num">${money0(sum(man, (x) => +x.m.valor))}</b></div><div class="list">${man.map(({ m, oficina }) => { const vg = !oficina && m.viagemId && s.viagens.find((v) => v.id === m.viagemId);
         return `<a class="li" href="#" data-act="${oficina ? 'editarManut' : 'editarDespesa'}" data-id="${m.id}"><div class="avatar">${icon('wrench')}</div><div class="grow"><div class="t small">${oficina ? esc(D.nomeManut(m.tipo)) : esc(D.nomeCategoria(m.categoria))}${m.descricao ? ' · ' + esc(m.descricao) : ''}</div><div class="s">${date(m.data)}${m.km ? ' · ' + km(m.km) : ''}${oficina ? (m.oficina ? ' · ' + esc(m.oficina) : ' · oficina') : ' · na estrada' + (vg ? ` · viagem #${vg.numero || ''} ${esc(vg.destino)}` : '')}</div></div><b class="num small">${money0(m.valor)}</b></a>`; }).join('') || empty('Nenhuma manutenção registrada.', 'wrench')}</div></div>
     </div>
-    <div class="card pad-0 mt"><div style="padding:16px 16px 0"><h2>Últimas viagens</h2></div><div class="tbl-wrap"><table class="tbl"><tbody>${vgs.map((x) => `<tr class="click" data-act="abrirViagem" data-id="${x.id}"><td>${dateShort(x.dataSaida)}</td><td>#${x.numero} ${esc(x.origem)} → ${esc(x.destino)}</td><td class="hide-m small">${esc(D.motorista(s, x.motoristaId)?.nome || '')}</td><td class="r">${money0(x.valorFrete)}</td></tr>`).join('') || `<tr><td>${empty('—')}</td></tr>`}</tbody></table></div></div>`, { back: true });
+    <div class="card pad-0 mt"><div style="padding:16px 16px 0" class="row between"><h2>Últimas viagens</h2><span class="muted small">clique para abrir a viagem</span></div><div class="tbl-wrap"><table class="tbl"><tbody>${vgs.map((x) => `<tr class="click" data-act="abrirViagem" data-id="${x.id}"><td>${dateShort(x.dataSaida)}</td><td>#${x.numero} ${esc(x.origem)} → ${esc(x.destino)}</td><td class="hide-m small">${esc(D.motorista(s, x.motoristaId)?.nome || '')}</td><td class="r">${money0(x.valorFrete)}</td></tr>`).join('') || `<tr><td>${empty('—')}</td></tr>`}</tbody></table></div></div>`, { back: true });
 }
 
 // ---------- Motoristas ----------
@@ -646,7 +646,7 @@ function vMotorista({ id, query }) {
   const ac = D.acerto(s, id, de, ate);
   const texto = `Acerto ${nome.toLowerCase()} (${date(de)} a ${date(ate)}) — ${m.nome}\n\nComissões: ${money(ac.comissoes)} (${ac.viagens.length} viagens)\nVocê pagou: ${money(ac.reembolsos)}\nAdiantamentos: −${money(ac.adiantamentos)}\nFrete que ficou com você: −${money(ac.emEspecie)}\n${ac.saldo >= 0 ? 'A receber da empresa' : 'Devolver à empresa'}: ${money(Math.abs(ac.saldo))}`;
   return A.tela(m.nome, `${A.pageHead(esc(m.nome), `${esc(D.veiculo(s, m.veiculoId)?.placa || 'sem veículo habitual')} · CNH ${esc(m.cnhCategoria || '—')} até ${date(m.cnhValidade)} · comissão ${m.comissaoPct || 0}%`,
-      `<a class="btn ghost" target="_blank" rel="noopener" href="${waLink(m.telefone, texto)}">${icon('whatsapp')} Enviar acerto</a><button class="btn ghost" data-act="editarMotorista" data-id="${id}">${icon('edit')} Editar</button>`)}
+      `<a class="btn ghost" target="_blank" rel="noopener" href="${waLink(m.telefone, texto)}">${icon('whatsapp')} Enviar acerto</a><button class="btn ghost" data-act="editarMotorista" data-id="${id}">${icon('edit')} Editar motorista</button>`)}
     ${segPeriodo(`motorista/${id}`, p)}
     <div class="grid g4">${kpi('Comissões', money0(ac.comissoes), plural(ac.viagens.length, 'viagem', 'viagens'))}${kpi('Pagou na estrada', money0(ac.reembolsos), 'gastos pagos por ele')}${kpi('Ficou com ele', money0(ac.adiantamentos + ac.emEspecie), 'adiantamento + frete em espécie')}${kpi('Saldo do acerto', `<span class="${ac.saldo >= 0 ? '' : 'down'}">${money0(Math.abs(ac.saldo))}</span>`, ac.saldo >= 0 ? 'a empresa paga ao motorista' : 'o motorista devolve à empresa')}</div>
     <div class="row between mt"><h2>Acerto por viagem</h2><div class="row gap-s"><button class="btn ghost sm" data-act="expandirTudo">Expandir tudo</button><button class="btn ghost sm" data-act="recolherTudo">Recolher tudo</button></div></div>
