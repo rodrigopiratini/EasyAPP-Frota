@@ -18,6 +18,7 @@ export const SEGMENTO = {
     { id: 'frota30', nome: 'Frota 30', preco: 399, descricao: 'até 30 veículos' },
   ],
   diasTeste: 30,
+  atividade: false,                      // registro de atividades fora do menu por enquanto (continua gravando)
 
   gestao: { nome: 'EasyAPP Frota Gestão', curto: 'Gestão', descricao: 'Para o dono da frota: resultado por caminhão, viagens, combustível, despesas, manutenção e acerto dos motoristas.' },
   usuario: {
