@@ -4,6 +4,7 @@
 // =====================================================================
 export const SEGMENTO = {
   id: 'easyapp-frota',
+  schema: 'frota',                       // pasta deste app no banco (projeto easyapp-fabrica)
   nome: 'EasyApp Frota',
   slogan: 'Gestão de frota para pequenas transportadoras: viagens, combustível, despesas, manutenção e o acerto de cada motorista.',
   icone: 'truck',
