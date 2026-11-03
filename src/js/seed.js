@@ -4,7 +4,7 @@ import { today, addDays } from './core/fmt.js';
 
 export function seed({ vazio = false } = {}) {
   const meta = { versao: 1, demo: !vazio, empresa: 'Transportes Serra Azul (demonstração)', pinGestao: '0000', cidade: 'Caxias do Sul/RS', precoDiesel: 6.19 };
-  const vazioTudo = { meta, veiculos: [], motoristas: [], clientes: [], viagens: [], abastecimentos: [], despesas: [], manutencoes: [], acessos: [] };
+  const vazioTudo = { meta, veiculos: [], motoristas: [], clientes: [], viagens: [], abastecimentos: [], despesas: [], manutencoes: [], recebimentos: [], acessos: [] };
   if (vazio) return vazioTudo;
   const t = today();
   let semente = 7;
@@ -31,7 +31,7 @@ export function seed({ vazio = false } = {}) {
   ];
   const rotas = [['Caxias do Sul/RS', 'São Paulo/SP', 1130, 9800], ['Caxias do Sul/RS', 'Curitiba/PR', 560, 5200], ['Bento Gonçalves/RS', 'Porto Alegre/RS', 120, 1600],
     ['Passo Fundo/RS', 'Rio Grande/RS', 480, 4600], ['Caxias do Sul/RS', 'Florianópolis/SC', 430, 4100], ['Farroupilha/RS', 'Joinville/SC', 610, 5600]];
-  const viagens = [], abastecimentos = [], despesas = [], manutencoes = [];
+  const viagens = [], abastecimentos = [], despesas = [], manutencoes = [], recebimentos = [];
   let n = 1;
   for (const [vi, v] of veiculos.entries()) {
     const m = motoristas[vi];
@@ -46,7 +46,13 @@ export function seed({ vazio = false } = {}) {
       const recebido = d < -40 || rnd() > 0.5;
       viagens.push({ id: 'vg' + n, numero: n, motoristaId: m.id, veiculoId: v.id, clienteId: clientes[entre(0, 3)].id, origem: orig, destino: dest, carga: ['Móveis', 'Vinhos', 'Grãos', 'Carga geral'][entre(0, 3)],
         dataSaida: saida, dataChegada: chegada, kmInicio: kmI, kmFim: kmF, valorFrete, comissaoPct: m.comissaoPct, adiantamento: dist > 500 ? 400 : 150, status: 'concluida',
-        recebido, recebidoEm: recebido ? addDays(chegada, entre(5, 25)) : null, conferido: d < -6 });
+        recebido, recebidoEm: recebido ? addDays(chegada, entre(5, 25)) : null, conferido: d < -6, fechadoEm: d < -6 ? addDays(chegada, 1) : null });
+      // parte do frete com o motorista (dinheiro / carta frete), o resto no PIX do dono
+      if (recebido) {
+        const comMot = rnd() > 0.6 ? Math.round(valorFrete * 0.3 / 10) * 10 : 0;
+        if (comMot) recebimentos.push({ id: 'rc' + n + 'm', viagemId: 'vg' + n, motoristaId: m.id, veiculoId: v.id, forma: rnd() > 0.5 ? 'especie' : 'carta_frete', com: 'motorista', valor: comMot, data: chegada, conferido: d < -6 });
+        recebimentos.push({ id: 'rc' + n, viagemId: 'vg' + n, motoristaId: m.id, veiculoId: v.id, forma: 'pix', com: 'dono', valor: valorFrete - comMot, data: addDays(chegada, entre(1, 10)), conferido: true });
+      }
       // abastecimentos ao longo da viagem (consumo realista)
       const kml = curto ? (v.tipo === 'vuc' ? 6.2 : 3.6) : 2.4;
       let kmA = kmI;
@@ -75,5 +81,5 @@ export function seed({ vazio = false } = {}) {
     { codigo: 'JOAO', ref: 'mo1', nome: 'João Pereira', pin: '1234', ativo: true },
     { codigo: 'MARCOS', ref: 'mo2', nome: 'Marcos Oliveira', pin: '1234', ativo: true },
   ];
-  return { ...vazioTudo, veiculos, motoristas, clientes, viagens, abastecimentos, despesas, manutencoes, acessos };
+  return { ...vazioTudo, veiculos, motoristas, clientes, viagens, abastecimentos, despesas, manutencoes, recebimentos, acessos };
 }

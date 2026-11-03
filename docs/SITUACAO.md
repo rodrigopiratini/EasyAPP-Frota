@@ -16,12 +16,17 @@
 - Valores com máscara de R$; "preencha 2 de 3" (combustível, litros, preço por litro) na viagem e no abastecimento (`src/js/tres.js`).
 - Resultado, lucro e margem por viagem conferidos: batem com o módulo dele.
 
-## Fechamento da viagem e Painel (03/11/2026)
-- Viagens › **Fechar** (ou Fechamento dentro da viagem): como o frete foi recebido (PIX ao dono, carta frete, dinheiro com o motorista…; cada linha
-  diz com quem ficou), custos com "pago pelo motorista", comissão e o saldo: ficou com ele − pagou − comissão = devolve (ou recebe).
-  Relatório para conferência em PDF (abre numa janela; imprimir → salvar como PDF) e envio por WhatsApp. Cálculo em `dominio.js` (`fechamento`, `acerto`).
-- Painel: cartões e "Para onde vai o dinheiro" abrem o detalhamento/extrato (`abrirDetalhe`); gráficos de lucro por viagem, margem, motoristas, rotas, recebimentos e consumo.
-- Viagem: escolher o motorista puxa o caminhão e a comissão (e o caminhão puxa o motorista); dá para trocar. Botão de excluir na lista.
+## Como a viagem funciona (03/11/2026)
+- **Abrir:** a Gestão abre a viagem (motorista → caminhão e comissão vêm do cadastro; frete já na abertura; situação "Planejada")
+  ou o motorista inicia pelo app. Datas de saída e chegada sugeridas (hoje), mas editáveis.
+- **Durante:** tudo é lançado *na viagem* — despesas (combustível, pedágio, alimentação…; coleções `abastecimentos`/`despesas` com `viagemId`)
+  e receitas (coleção `recebimentos`: PIX ao dono, carta frete, dinheiro com o motorista…; campo `com` = dono/motorista).
+  No app do motorista o caminhão vem da viagem (não dá para trocar) e há o botão **Recebi**.
+- **Fechar:** página da viagem (`#/viagem/<id>`) mostra receitas, despesas e o acerto: ficou com o motorista − o que ele pagou − comissão
+  = devolve/recebe. Relatório PDF, WhatsApp, **Fechar viagem** (confere tudo) e **Reabrir**. Viagem do motorista é numerada pela Gestão ao chegar.
+- **Excluir viagem** apaga junto as despesas, abastecimentos e recebimentos dela.
+- Km com ponto de milhar (campo `inteiro` do núcleo). Painel: cartões e "Para onde vai o dinheiro" abrem detalhamento/extrato.
+- Os custos que estavam em campos da viagem (dados importados do Financial) viraram despesas ligadas a cada viagem.
 - Login do motorista (código + PIN) precisa de **Anonymous sign-ins** ligado no projeto EasyAPP-Fábrica (Authentication › Sign In / Providers).
 
 ## Próximos passos

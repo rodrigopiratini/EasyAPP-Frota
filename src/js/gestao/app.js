@@ -6,7 +6,7 @@ import { money, money0, moneyK, int, percent, date, dateShort, today, esc, sortB
 import { icon, kpi, badge, empty, iniciais, toast, confirmar, insightCard, download, toCSV, waLink, modal, closeModal } from '../core/ui.js';
 import { chart, hbars, legend } from '../core/charts.js';
 import { ligarTres, completarTres } from '../tres.js';
-import { abrirFechamento } from './fechamento.js';
+import { resumoHTML, relatorio, textoWhats } from './fechamento.js';
 
 // Motorista e caminhão andam juntos: escolher um puxa o outro (dá para trocar quando outro motorista cobre)
 function ligarVinculo(formId) {
@@ -40,9 +40,9 @@ const CAMPOS_VEICULO = [
   { k: 'motoristaId', label: 'Motorista', tipo: 'select', opcoes: (s) => s.motoristas.filter((m) => m.ativo !== false).map((m) => [m.id, m.nome]) },
   { k: 'tipo', label: 'Tipo', tipo: 'select', opcoes: D.TIPOS_VEICULO },
   { k: 'ano', label: 'Ano', tipo: 'number' },
-  { k: 'kmInicial', label: 'Km no cadastro', tipo: 'number', dica: 'O km atual é atualizado sozinho pelas viagens e abastecimentos.' },
-  { k: 'oleoCadaKm', label: 'Troca de óleo a cada (km)', tipo: 'number', ph: '30000' },
-  { k: 'revisaoCadaKm', label: 'Revisão a cada (km)', tipo: 'number', ph: '60000' },
+  { k: 'kmInicial', label: 'Km no cadastro', tipo: 'inteiro', dica: 'O km atual é atualizado sozinho pelas viagens e abastecimentos.' },
+  { k: 'oleoCadaKm', label: 'Troca de óleo a cada (km)', tipo: 'inteiro', ph: '30.000' },
+  { k: 'revisaoCadaKm', label: 'Revisão a cada (km)', tipo: 'inteiro', ph: '60.000' },
   { k: 'ativo', label: 'Em operação', tipo: 'checkbox', padrao: true },
 ];
 const CAMPOS_VENC = D.VENCIMENTOS.map(([k, n]) => ({ k: 'v_' + k, label: `${n} (vencimento)`, tipo: 'date' }));
@@ -52,7 +52,7 @@ const CAMPOS_MOTORISTA = [
   { k: 'veiculoId', label: 'Veículo habitual', tipo: 'select', opcoes: opVeiculos },
   { k: 'cnhCategoria', label: 'Categoria da CNH', tipo: 'select', opcoes: ['B', 'C', 'D', 'E'].map((c) => [c, c]) },
   { k: 'cnhValidade', label: 'Validade da CNH', tipo: 'date' },
-  { k: 'comissaoPct', label: 'Comissão sobre o frete (%)', tipo: 'number', padrao: 10, dica: 'Usada nas viagens novas e no acerto.' },
+  { k: 'comissaoPct', label: 'Comissão sobre o frete (%)', tipo: 'number', padrao: 12, dica: 'Vale para as viagens dele; no fechamento dá para mudar.' },
   { k: 'ativo', label: 'Ativo', tipo: 'checkbox', padrao: true },
 ];
 const CAMPOS_CLIENTE = [
@@ -62,36 +62,32 @@ const CAMPOS_CLIENTE = [
   { k: 'prazoDias', label: 'Prazo de pagamento (dias)', tipo: 'number', padrao: 30 },
   { k: 'obs', label: 'Observações', tipo: 'textarea', col: 2 },
 ];
+const SITUACOES = Object.entries(D.STATUS_VIAGEM).map(([k, v]) => [k, v.label]);
+const naEdicao = (d) => !!d.id;
 const CAMPOS_VIAGEM = [
-  { k: 'veiculoId', label: 'Veículo', tipo: 'select', obrig: true, opcoes: opVeiculos },
   { k: 'motoristaId', label: 'Motorista', tipo: 'select', obrig: true, opcoes: opMotoristas },
-  { k: 'clienteId', label: 'Cliente (contratante)', tipo: 'select', opcoes: opClientes },
-  { k: 'carga', label: 'Carga', ph: 'Móveis, grãos…' },
+  { k: 'veiculoId', label: 'Caminhão', tipo: 'select', obrig: true, opcoes: opVeiculos, dica: 'Vem do motorista; troque se for outro caminhão.' },
   { k: 'origem', label: 'Origem', obrig: true, ph: 'Cidade/UF' },
   { k: 'destino', label: 'Destino', obrig: true, ph: 'Cidade/UF' },
-  { k: 'dataSaida', label: 'Saída', tipo: 'date', obrig: true, padrao: today },
-  { k: 'dataChegada', label: 'Chegada', tipo: 'date' },
-  { k: 'kmRodado', label: 'Km rodado', tipo: 'number', dica: 'Ou preencha o km do painel na saída e na chegada.' },
-  { k: 'valorFrete', label: 'Valor faturado (frete)', tipo: 'money' },
-  { k: 'combustivel', label: 'Combustível', tipo: 'money' },
-  { k: 'litros', label: 'Litros', tipo: 'number' },
-  { k: 'precoLitro', label: 'Preço por litro', tipo: 'money', dica: 'Preencha 2 de 3 (combustível, litros, preço): o terceiro é calculado na hora.' },
-  { k: 'pedagio', label: 'Pedágio', tipo: 'money' },
-  { k: 'comissaoPct', label: 'Comissão do motorista (%)', tipo: 'number' },
-  { k: 'manutencao', label: 'Manutenção', tipo: 'money' },
-  { k: 'outros', label: 'Outros', tipo: 'money' },
-  { k: 'kmInicio', label: 'Km do painel na saída', tipo: 'number' },
-  { k: 'kmFim', label: 'Km do painel na chegada', tipo: 'number' },
+  { k: 'clienteId', label: 'Cliente (contratante)', tipo: 'select', opcoes: opClientes },
+  { k: 'carga', label: 'Carga', ph: 'Adubo, grãos…' },
+  { k: 'valorFrete', label: 'Valor do frete', tipo: 'money' },
+  { k: 'comissaoPct', label: 'Comissão do motorista (%)', tipo: 'number', dica: 'Vem do cadastro do motorista.' },
+  { k: 'dataSaida', label: 'Data de saída', tipo: 'date', obrig: true, padrao: today },
   { k: 'adiantamento', label: 'Adiantamento ao motorista', tipo: 'money' },
-  { k: 'status', label: 'Situação', tipo: 'select', obrig: true, padrao: 'planejada', opcoes: Object.entries(D.STATUS_VIAGEM).map(([k, v]) => [k, v.label]) },
-  { k: 'recebido', label: 'Frete recebido do cliente', tipo: 'checkbox' },
+  { k: 'kmInicio', label: 'Km do painel na saída', tipo: 'inteiro' },
+  { k: 'status', label: 'Situação', tipo: 'select', obrig: true, padrao: 'planejada', opcoes: SITUACOES, dica: 'Planejada: o motorista inicia pelo app dele.' },
+  { k: 'dataChegada', label: 'Data de chegada', tipo: 'date', se: naEdicao },
+  { k: 'kmFim', label: 'Km do painel na chegada', tipo: 'inteiro', se: naEdicao },
+  { k: 'kmRodado', label: 'Km rodado', tipo: 'inteiro', se: naEdicao, dica: 'Só se não tiver o km do painel.' },
+  { k: 'recebido', label: 'Frete todo recebido do cliente', tipo: 'checkbox', se: naEdicao },
   { k: 'obs', label: 'Observações', tipo: 'textarea', col: 2 },
 ];
 const CAMPOS_ABAST = [
   { k: 'data', label: 'Data', tipo: 'date', obrig: true, padrao: today },
   { k: 'veiculoId', label: 'Veículo', tipo: 'select', obrig: true, opcoes: opVeiculos },
   { k: 'motoristaId', label: 'Motorista', tipo: 'select', opcoes: opMotoristas },
-  { k: 'km', label: 'Km no painel', tipo: 'number', obrig: true },
+  { k: 'km', label: 'Km no painel', tipo: 'inteiro', obrig: true },
   { k: 'litros', label: 'Litros', tipo: 'number', obrig: true },
   { k: 'valor', label: 'Valor total', tipo: 'money', obrig: true },
   { k: 'precoLitro', label: 'Preço por litro', tipo: 'money', dica: 'Preencha 2 de 3 (valor, litros, preço): o terceiro é calculado na hora.' },
@@ -112,25 +108,78 @@ const CAMPOS_MANUT = [
   { k: 'data', label: 'Data', tipo: 'date', obrig: true, padrao: today },
   { k: 'veiculoId', label: 'Veículo', tipo: 'select', obrig: true, opcoes: opVeiculos },
   { k: 'tipo', label: 'Serviço', tipo: 'select', obrig: true, opcoes: D.TIPOS_MANUT },
-  { k: 'km', label: 'Km', tipo: 'number' },
+  { k: 'km', label: 'Km', tipo: 'inteiro' },
   { k: 'valor', label: 'Valor', tipo: 'money' },
   { k: 'oficina', label: 'Oficina' },
   { k: 'descricao', label: 'O que foi feito', col: 2 },
 ];
 
-const TRES_VIAGEM = { total: 'combustivel', litros: 'litros', preco: 'precoLitro' };
-const novaViagem = (base = {}) => { editar({ titulo: 'Viagem', colecao: 'viagens', campos: CAMPOS_VIAGEM, prefixo: 'vg', doc: null, inicial: base,
-  antesDeSalvar: (v, antes) => {
-    completarTres(v, TRES_VIAGEM);
-    if (!antes) { v.numero = D.proximoNumero(S()); v.conferido = true; }
-    if (v.comissaoPct == null) v.comissaoPct = D.motorista(S(), v.motoristaId)?.comissaoPct ?? 0;
-    if (v.kmFim && v.kmInicio && v.kmFim < v.kmInicio) return 'Km na chegada menor que na saída';
-    if (v.recebido && !v.recebidoEm) v.recebidoEm = today();
-  } }); ligarTres('fed', TRES_VIAGEM); ligarVinculo('fed');
-  const f = document.getElementById('fed'); if (f && !base.veiculoId) { const m = D.motorista(S(), f.elements.motoristaId.value); if (m?.veiculoId) f.elements.veiculoId.value = m.veiculoId; if (m?.comissaoPct != null) f.elements.comissaoPct.value = m.comissaoPct; } };
-const editarViagem = (id) => { editar({ extra: `<div class="mt"><button class="btn ghost" data-act="irFechamento">${icon('money')} Fechamento / acerto desta viagem</button></div>`, titulo: `Viagem #${S().viagens.find((v) => v.id === id)?.numero}`, colecao: 'viagens', campos: CAMPOS_VIAGEM, doc: S().viagens.find((v) => v.id === id),
-  antesDeSalvar: (v) => { completarTres(v, TRES_VIAGEM); if (v.kmFim && v.kmInicio && v.kmFim < v.kmInicio) return 'Km na chegada menor que na saída'; if (v.recebido && !v.recebidoEm) v.recebidoEm = today(); if (!v.recebido) v.recebidoEm = null; } }); ligarTres('fed', TRES_VIAGEM); ligarVinculo('fed');
-  document.querySelector('.overlay [data-act=irFechamento]')?.addEventListener('click', () => { closeModal(); abrirFechamento({ id, S, store: A.store }); }); };
+const checarViagem = (v) => {
+  if (v.kmFim && v.kmInicio && v.kmFim < v.kmInicio) return 'Km na chegada menor que na saída';
+  if (v.status === 'concluida' && !v.dataChegada) v.dataChegada = today();
+  if (v.dataChegada && v.dataChegada < v.dataSaida) return 'A chegada está antes da saída';
+};
+// Abrir viagem (gestão): motorista, caminhão, rota e frete. Custos e recebimentos vão sendo lançados nela depois.
+const novaViagem = (base = {}) => {
+  const m0 = S().motoristas.find((m) => m.ativo !== false);
+  editar({ titulo: 'Abrir viagem', colecao: 'viagens', campos: CAMPOS_VIAGEM, prefixo: 'vg', doc: null,
+    inicial: { motoristaId: m0?.id, veiculoId: m0?.veiculoId, comissaoPct: m0?.comissaoPct ?? '', ...base },
+    antesDeSalvar: (v) => {
+      v.numero = D.proximoNumero(S()); v.conferido = false;
+      if (v.comissaoPct == null) v.comissaoPct = D.motorista(S(), v.motoristaId)?.comissaoPct ?? null;
+      return checarViagem(v);
+    },
+    onSalvo: (v) => { if (v) location.hash = '#/viagem/' + v.id; } });
+  ligarVinculo('fed');
+};
+const editarViagem = (id) => {
+  const doc = S().viagens.find((v) => v.id === id);
+  editar({ titulo: `Viagem #${doc?.numero || ''}`, colecao: 'viagens', campos: CAMPOS_VIAGEM, doc, apagar: false,
+    antesDeSalvar: (v) => { const e = checarViagem(v); if (e) return e; if (v.recebido && !v.recebidoEm) v.recebidoEm = today(); if (!v.recebido) v.recebidoEm = null; } });
+  ligarVinculo('fed');
+};
+
+// Lançamentos dentro da viagem: escolhe o tipo e lança (o caminhão e o motorista vêm da viagem)
+const CAMPOS_ABAST_V = [
+  { k: 'data', label: 'Data', tipo: 'date', obrig: true, padrao: today },
+  { k: 'km', label: 'Km no painel', tipo: 'inteiro' },
+  { k: 'valor', label: 'Valor total', tipo: 'money', obrig: true },
+  { k: 'litros', label: 'Litros', tipo: 'number' },
+  { k: 'precoLitro', label: 'Preço por litro', tipo: 'money', dica: 'Preencha 2 de 3 (valor, litros, preço): o terceiro é calculado.' },
+  { k: 'posto', label: 'Posto' },
+  { k: 'pagoPeloMotorista', label: 'Pago pelo motorista (com o dinheiro da viagem)', tipo: 'checkbox', col: 2 },
+];
+const CAMPOS_DESP_V = [
+  { k: 'data', label: 'Data', tipo: 'date', obrig: true, padrao: today },
+  { k: 'valor', label: 'Valor', tipo: 'money', obrig: true },
+  { k: 'descricao', label: 'Descrição', col: 2 },
+  { k: 'pagoPeloMotorista', label: 'Pago pelo motorista (com o dinheiro da viagem)', tipo: 'checkbox', col: 2 },
+];
+const CAMPOS_RECEB = [
+  { k: 'forma', label: 'Forma', tipo: 'select', obrig: true, opcoes: D.FORMAS_RECEB.map(([k, n]) => [k, n]) },
+  { k: 'valor', label: 'Valor', tipo: 'money', obrig: true },
+  { k: 'com', label: 'Com quem ficou', tipo: 'select', obrig: true, padrao: 'dono', opcoes: [['dono', 'Dono (conta da empresa)'], ['motorista', 'Motorista (presta conta no fechamento)']] },
+  { k: 'data', label: 'Data', tipo: 'date', obrig: true, padrao: today },
+  { k: 'obs', label: 'Observação', col: 2 },
+];
+const daViagem = (v) => ({ viagemId: v.id, veiculoId: v.veiculoId, motoristaId: v.motoristaId });
+function lancarNaViagem(v, tipo) {
+  const nome = tipo === 'combustivel' ? 'Combustível' : D.nomeCategoria(tipo);
+  if (tipo === 'combustivel') {
+    editar({ titulo: `${nome} · viagem #${v.numero || ''}`, colecao: 'abastecimentos', campos: CAMPOS_ABAST_V, prefixo: 'ab', largo: false, inicial: { km: '' },
+      antesDeSalvar: (a) => { completarTres(a); Object.assign(a, daViagem(v), { conferido: true, tanqueCheio: false }); } });
+    return ligarTres('fed');
+  }
+  editar({ titulo: `${nome} · viagem #${v.numero || ''}`, colecao: 'despesas', campos: CAMPOS_DESP_V, prefixo: 'dp', largo: false,
+    antesDeSalvar: (d) => { Object.assign(d, daViagem(v), { categoria: tipo, conferido: true }); } });
+}
+function receitaForm(v, doc = null) {
+  editar({ titulo: doc ? 'Recebimento' : `Receita · viagem #${v.numero || ''}`, colecao: 'recebimentos', campos: CAMPOS_RECEB, prefixo: 'rc', doc, largo: false,
+    antesDeSalvar: (r, antes) => { if (!antes) Object.assign(r, daViagem(v), { conferido: true }); } });
+  const f = document.getElementById('fed');
+  f?.addEventListener('change', (e) => { if (e.target.name === 'forma') f.elements.com.value = D.comPadrao(e.target.value); });
+}
+
 function editarVeiculo(doc) {
   // o motorista do caminhão fica no cadastro do motorista (veículo habitual)
   const comVenc = doc ? { ...doc, motoristaId: S().motoristas.find((m) => m.veiculoId === doc.id)?.id || '', ...Object.fromEntries(D.VENCIMENTOS.map(([k]) => ['v_' + k, doc.venc?.[k] || ''])) } : null;
@@ -146,6 +195,8 @@ function editarVeiculo(doc) {
 }
 
 // ---------- App ----------
+const quemDeveTxt = (f) => (f.saldo > 0.004 ? `Motorista devolve ${money(f.saldo)}` : f.saldo < -0.004 ? `Empresa paga ao motorista ${money(-f.saldo)}` : 'Acerto zerado');
+const numerar = (id) => A.store.commit((s) => { const x = s.viagens.find((y) => y.id === id); if (x && !x.numero) x.numero = D.proximoNumero(s); });
 let ACOES;
 const A = criarApp({
   tipo: 'gestao',
@@ -154,14 +205,19 @@ const A = criarApp({
     ['#/despesas', 'receipt', 'Despesas'], ['#/veiculos', 'truck', 'Veículos'], ['#/motoristas', 'users', 'Motoristas'], ['#/clientes', 'store', 'Clientes']],
   tabs: [['#/painel', 'chart', 'Painel'], ['#/viagens', 'map', 'Viagens'], ['#/conferir', 'check', 'Conferir'], ['#/veiculos', 'truck', 'Veículos'], ['#/mais', 'menu', 'Mais']],
   badges: (s) => ({ '#/conferir': D.aConferir(s).length }),
-  ativo: (h, r) => (h === '#/veiculos' && r.startsWith('#/veiculo/')) || (h === '#/motoristas' && r.startsWith('#/motorista/')),
-  rotas: [['/painel', vPainel], ['/viagens', vViagens], ['/conferir', vConferir], ['/abastecimentos', vAbastecimentos], ['/despesas', vDespesas],
+  ativo: (h, r) => (h === '#/viagens' && r.startsWith('#/viagem/')) || (h === '#/veiculos' && r.startsWith('#/veiculo/')) || (h === '#/motoristas' && r.startsWith('#/motorista/')),
+  rotas: [['/painel', vPainel], ['/viagens', vViagens], ['/viagem/:id', vViagem], ['/conferir', vConferir], ['/abastecimentos', vAbastecimentos], ['/despesas', vDespesas],
     ['/veiculos', vVeiculos], ['/veiculo/:id', vVeiculo], ['/motoristas', vMotoristas], ['/motorista/:id', vMotorista], ['/clientes', vClientes]],
   camposEmpresa: [['cidade', 'Cidade/UF'], ['cnpj', 'CNPJ'], ['whatsapp', 'WhatsApp da empresa', '5554999999999']],
   topoDireita: (s) => `<a href="#/conferir" style="color:#fff;position:relative">${icon('check')}${D.aConferir(s).length ? `<span class="badge dot" style="position:absolute;top:-6px;right:-8px">${D.aConferir(s).length}</span>` : ''}</a>`,
   aoMudar: (msg, externo, info) => {
-    if (!externo || !info?.novo) return;
+    if (!externo || !info?.doc) return;
     const m = D.motorista(S(), info.doc.motoristaId)?.nome?.split(' ')[0] || 'Motorista';
+    // viagem aberta pelo motorista chega sem número (só a gestão numera)
+    if (info.colecao === 'viagens' && !info.doc.numero) setTimeout(() => numerar(info.doc.id), 0);
+    if (info.colecao === 'viagens' && !info.novo && info.doc.status === 'concluida' && info.antes?.status !== 'concluida') toast(`${m} chegou: viagem para ${info.doc.destino} pronta para o fechamento`);
+    if (info.colecao === 'recebimentos' && info.novo) toast(`${m} lançou um recebimento (${money(info.doc.valor)})`);
+    if (!info.novo) return;
     if (info.colecao === 'abastecimentos') toast(`${m} lançou um abastecimento (${money(info.doc.valor)})`);
     if (info.colecao === 'despesas') toast(`${m} lançou uma despesa (${money(info.doc.valor)})`);
     if (info.colecao === 'viagens') toast(`${m} iniciou uma viagem para ${info.doc.destino}`);
@@ -169,13 +225,41 @@ const A = criarApp({
   acoes: (ACOES = {
     novaViagem: () => novaViagem(),
     editarViagem: (el) => editarViagem(el.dataset.id),
-    fechamento: (el) => abrirFechamento({ id: el.dataset.id, S, store: A.store }),
+    abrirViagem: (el) => { location.hash = '#/viagem/' + el.dataset.id; },
+    lancarDespesa: (el) => {
+      const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
+      const tipos = [['combustivel', 'Combustível', 'fuel'], ...D.CATEGORIAS.map(([k, n]) => [k, n, 'receipt'])];
+      modal({ title: 'Nova despesa da viagem', body: `<div class="grid g2" style="gap:10px">${tipos.map(([k, n, ic]) => `<button class="acao-grande" data-act="tipo" data-k="${k}"><span class="ic">${icon(ic)}</span><span class="grow"><div class="t">${n}</div></span></button>`).join('')}</div>`,
+        handlers: { tipo: (b) => { closeModal(); lancarNaViagem(v, b.dataset.k); } } });
+    },
+    lancarReceita: (el) => { const v = S().viagens.find((x) => x.id === el.dataset.id); if (v) receitaForm(v); },
+    editarReceita: (el) => { const r = S().recebimentos.find((x) => x.id === el.dataset.id); const v = S().viagens.find((x) => x.id === r?.viagemId) || {}; if (r) receitaForm(v, r); },
+    fecharViagem: async (el) => {
+      const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
+      const f = D.fechamento(S(), v);
+      if (!(await confirmar(`Fechar a viagem #${v.numero || ''}? ${esc(quemDeveTxt(f))}. Os lançamentos ficam conferidos (o motorista não altera mais).`, { ok: 'Fechar viagem', titulo: 'Fechamento' }))) return;
+      A.store.commit((s) => {
+        const x = s.viagens.find((y) => y.id === v.id);
+        Object.assign(x, { fechadoEm: today(), conferido: true, status: 'concluida', dataChegada: x.dataChegada || today(), numero: x.numero || D.proximoNumero(s) });
+        if (f.faltaReceber === 0 && f.frete > 0) Object.assign(x, { recebido: true, recebidoEm: x.recebidoEm || today() });
+        for (const { col, x: l } of D.lancamentosDa(s, v.id)) s[col].find((y) => y.id === l.id).conferido = true;
+      });
+      toast('Viagem fechada');
+    },
+    reabrirViagem: (el) => { A.store.commit((s) => { s.viagens.find((x) => x.id === el.dataset.id).fechadoEm = null; }); toast('Viagem reaberta para ajustes'); },
+    pdfViagem: (el) => {
+      const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
+      const w = window.open('', '_blank'); if (!w) return toast('Libere as janelas (pop-up) para gerar o relatório');
+      w.document.write(relatorio(S(), v, S().meta.empresa)); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 400);
+    },
+    whatsViagem: (el) => { const v = S().viagens.find((x) => x.id === el.dataset.id); if (v) window.open(waLink(D.motorista(S(), v.motoristaId)?.telefone, textoWhats(S(), v)), '_blank', 'noopener'); },
     excluirViagem: async (el) => {
       const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
-      const lig = [...S().abastecimentos, ...S().despesas].filter((x) => x.viagemId === v.id).length;
-      if (!(await confirmar(`Excluir a viagem #${v.numero} ${esc(v.origem)} → ${esc(v.destino)}?${lig ? ` Os ${lig} lançamento(s) ligados a ela continuam, sem viagem.` : ''} Não dá para desfazer.`, { ok: 'Excluir', titulo: 'Excluir viagem' }))) return;
-      A.store.commit((s) => { s.viagens = s.viagens.filter((x) => x.id !== v.id); for (const c of ['abastecimentos', 'despesas']) for (const x of s[c]) if (x.viagemId === v.id) x.viagemId = null; });
+      const lig = D.lancamentosDa(S(), v.id).length;
+      if (!(await confirmar(`Excluir a viagem #${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}${lig ? ` e os ${lig} lançamento(s) dela (despesas, abastecimentos e recebimentos)` : ''}? Não dá para desfazer.`, { ok: 'Excluir tudo', titulo: 'Excluir viagem' }))) return;
+      A.store.commit((s) => { s.viagens = s.viagens.filter((x) => x.id !== v.id); for (const c of D.LANC_VIAGEM) s[c] = (s[c] || []).filter((x) => x.viagemId !== v.id); });
       toast('Viagem excluída');
+      if (location.hash.startsWith('#/viagem/')) location.hash = '#/viagens';
     },
     detalhe: (el) => abrirDetalhe(el.dataset.k, el.dataset.p, el.dataset.cat),
     receber: (el) => { A.store.commit((s) => Object.assign(s.viagens.find((v) => v.id === el.dataset.id), { recebido: true, recebidoEm: today() })); toast('Frete marcado como recebido'); },
@@ -195,7 +279,7 @@ const A = criarApp({
     conferirTudo: async () => {
       const itens = D.aConferir(S());
       if (!(await confirmar(`Marcar ${plural(itens.length, 'lançamento')} como conferido? Depois disso os motoristas não alteram mais.`, { ok: 'Conferir tudo' }))) return;
-      A.store.commit((s) => { for (const c of ['viagens', 'abastecimentos', 'despesas']) for (const x of s[c]) if (!x.conferido && x.motoristaId && (c !== 'viagens' || x.status === 'concluida')) x.conferido = true; });
+      A.store.commit((s) => { for (const c of ['viagens', ...D.LANC_VIAGEM]) for (const x of s[c] || []) if (!x.conferido && x.motoristaId && (c !== 'viagens' || x.status === 'concluida')) x.conferido = true; });
       toast('Tudo conferido');
     },
     exportar: (el) => exportarPeriodo(el.dataset.p),
@@ -229,7 +313,7 @@ function vPainel({ query }) {
   const rv = sortBy(vs.map((v) => ({ v, r: D.resultadoViagem(s, v) })), (x) => D.dataViagem(x.v));
   const porMot = sortBy(s.motoristas.map((m) => ({ m, vs: vs.filter((v) => v.motoristaId === m.id) })).filter((x) => x.vs.length).map((x) => ({ ...x, fat: sum(x.vs, (v) => +v.valorFrete), lucro: sum(x.vs, (v) => D.resultadoViagem(s, v).lucro) })), (x) => -x.fat);
   const rotas = {}; for (const { v, r: q } of rv) { const k = `${v.origem} → ${v.destino}`; (rotas[k] ||= { k, n: 0, lucro: 0, fat: 0 }); rotas[k].n++; rotas[k].lucro += q.lucro; rotas[k].fat += q.frete; }
-  const formas = {}; for (const v of vs) for (const x of D.recebimentos(v)) formas[x.forma] = (formas[x.forma] || 0) + +x.valor;
+  const formas = {}; for (const v of vs) for (const x of D.recebimentos(v, s)) formas[x.forma] = (formas[x.forma] || 0) + +x.valor;
   const consumo = s.veiculos.map((v) => ({ v, c: D.consumoGeral(s, v.id, de, ate) })).filter((x) => x.c);
   const kml = (() => { const l = r.litros; return l > 0 && r.km ? r.km / l : 0; })();
   return A.tela('Painel', `
@@ -279,7 +363,7 @@ function vPainel({ query }) {
 // ---------- Detalhamento (tela sobreposta) ----------
 const abrirOrigem = (col, id) => {
   closeModal();
-  if (col === 'viagens') return editarViagem(id);
+  if (col === 'viagens') { location.hash = '#/viagem/' + id; return; }
   const fake = { dataset: { id } };
   ({ abastecimentos: ACOES.editarAbast, despesas: ACOES.editarDespesa, manutencoes: ACOES.editarManut })[col]?.(fake);
 };
@@ -352,25 +436,59 @@ function vViagens({ query }) {
     <div class="seg mb" style="max-width:100%;overflow-x:auto">${[['abertas', 'Em andamento'], ['receber', 'A receber'], ['concluidas', 'Concluídas'], ['todas', 'Todas']].map(([v, n]) => `<button class="${f === v ? 'on' : ''}" data-act="goto" data-h="#/viagens?f=${v}">${n}</button>`).join('')}</div>
     <div class="card pad-0"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Viagem</th><th class="hide-m">Veículo · motorista</th><th>Saída</th><th>Situação</th><th class="r">Frete</th><th class="r hide-m">Lucro</th><th class="r hide-m">Km</th><th></th></tr></thead>
     <tbody>${lista.slice(0, 300).map((v) => { const st = D.STATUS_VIAGEM[v.status]; const ve = D.veiculo(s, v.veiculoId), mo = D.motorista(s, v.motoristaId), cl = D.cliente(s, v.clienteId);
-      return `<tr data-busca="${esc(`${v.numero} ${v.origem} ${v.destino} ${ve?.placa} ${mo?.nome} ${cl?.nome} ${v.carga}`)}"><td class="click" data-act="editarViagem" data-id="${v.id}"><b>#${v.numero} ${esc(v.origem)} → ${esc(v.destino)}</b><div class="tiny muted">${esc(cl?.nome || 'sem cliente')}${v.carga ? ' · ' + esc(v.carga) : ''}</div></td>
+      return `<tr data-busca="${esc(`${v.numero} ${v.origem} ${v.destino} ${ve?.placa} ${mo?.nome} ${cl?.nome} ${v.carga}`)}"><td class="click" data-act="abrirViagem" data-id="${v.id}"><b>#${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}</b><div class="tiny muted">${esc(cl?.nome || 'sem cliente')}${v.carga ? ' · ' + esc(v.carga) : ''}</div></td>
         <td class="hide-m small">${esc(ve?.placa || '—')} · ${esc(mo?.nome || '—')}</td><td>${dateShort(v.dataSaida)}</td>
         <td>${badge(st?.label || v.status, st?.tom)} ${conferidoBadge(v)}${v.status === 'concluida' && +v.valorFrete > 0 ? (v.recebido ? ' ' + badge('Recebido', 'ok') : '') : ''}</td>
         <td class="r">${+v.valorFrete ? money0(v.valorFrete) : '<span class="muted">definir</span>'}</td>${(() => { const r = D.resultadoViagem(s, v); return `<td class="r hide-m">${+v.valorFrete ? `<b class="${r.lucro >= 0 ? 'up' : 'down'}">${money0(r.lucro)}</b><div class="tiny muted">${percent(r.margem)} do frete</div>` : '—'}</td>`; })()}<td class="r hide-m">${D.kmViagem(v) ? int(D.kmViagem(v)) : '—'}</td>
-        <td class="r" style="white-space:nowrap">${v.status === 'concluida' && !v.recebido && +v.valorFrete > 0 ? `<button class="btn ghost sm" data-act="receber" data-id="${v.id}">Recebido</button> ` : ''}${v.status === 'concluida' ? `<button class="btn ${v.fechadoEm ? 'ghost' : ''} sm" data-act="fechamento" data-id="${v.id}" title="Fechamento / acerto">${icon('money')} ${v.fechadoEm ? 'Fechada' : 'Fechar'}</button> ` : ''}<button class="iconbtn" data-act="excluirViagem" data-id="${v.id}" aria-label="Excluir viagem" title="Excluir viagem">${icon('trash')}</button></td></tr>`; }).join('') || `<tr><td colspan="8">${empty('Nenhuma viagem aqui.', 'map')}</td></tr>`}</tbody></table></div></div>`);
+        <td class="r" style="white-space:nowrap">${v.status === 'concluida' && !v.recebido && +v.valorFrete > 0 ? `<button class="btn ghost sm" data-act="receber" data-id="${v.id}">Recebido</button> ` : ''}<button class="btn ${v.fechadoEm || v.status !== 'concluida' ? 'ghost' : ''} sm" data-act="abrirViagem" data-id="${v.id}" title="Abrir a viagem">${v.fechadoEm ? icon('check') + ' Fechada' : v.status === 'concluida' ? icon('money') + ' Fechar' : 'Abrir'}</button> <button class="iconbtn" data-act="excluirViagem" data-id="${v.id}" aria-label="Excluir viagem" title="Excluir viagem">${icon('trash')}</button></td></tr>`; }).join('') || `<tr><td colspan="8">${empty('Nenhuma viagem aqui.', 'map')}</td></tr>`}</tbody></table></div></div>`);
+}
+
+// ---------- Viagem: tudo o que aconteceu nela e o fechamento ----------
+function vViagem({ id }) {
+  const s = S();
+  const v = s.viagens.find((x) => x.id === id);
+  if (!v) return A.tela('Viagem', empty('Viagem não encontrada'), { back: true });
+  const f = D.fechamento(s, v);
+  const st = D.STATUS_VIAGEM[v.status];
+  const ve = D.veiculo(s, v.veiculoId), mo = D.motorista(s, v.motoristaId), cl = D.cliente(s, v.clienteId);
+  const recDocs = sortBy((s.recebimentos || []).filter((x) => x.viagemId === id), (x) => x.data);
+  const recAntigos = Array.isArray(v.recebimentos) ? v.recebimentos.filter((x) => +x.valor > 0) : [];
+  const desp = sortBy(D.lancamentosDa(s, id).filter((l) => l.col !== 'recebimentos'), (l) => l.x.data);
+  const custosNaViagem = D.CUSTOS_VIAGEM.filter(([k]) => +v[k] > 0);
+  const fechada = !!v.fechadoEm;
+  const pend = (x) => (x.motoristaId && !x.conferido ? ' ' + badge('lançado pelo motorista', 'warn') : '');
+  const linhaD = ({ col, x }) => `<div class="li click" data-act="${col === 'abastecimentos' ? 'editarAbast' : 'editarDespesa'}" data-id="${x.id}"><div class="avatar">${icon(col === 'abastecimentos' ? 'fuel' : 'receipt')}</div>
+    <div class="grow"><div class="t small">${col === 'abastecimentos' ? `Combustível${+x.litros ? ' · ' + (+x.litros).toLocaleString('pt-BR') + ' l' : ''}${x.posto ? ' · ' + esc(x.posto) : ''}` : esc(D.nomeCategoria(x.categoria)) + (x.descricao ? ' · ' + esc(x.descricao) : '')}${pend(x)}</div>
+    <div class="s">${dateShort(x.data)} · ${x.pagoPeloMotorista ? '<b>pago pelo motorista</b>' : 'pago pela empresa'}</div></div><b class="num small">${money(x.valor)}</b></div>`;
+  const linhaR = (x, antigo) => `<div class="li ${antigo ? '' : 'click'}" ${antigo ? '' : `data-act="editarReceita" data-id="${x.id}"`}><div class="avatar">${icon('money')}</div>
+    <div class="grow"><div class="t small">${esc(D.nomeForma(x.forma))}${x.obs ? ' · ' + esc(x.obs) : ''}${pend(x)}</div><div class="s">${x.data ? dateShort(x.data) + ' · ' : ''}ficou com ${x.com === 'motorista' ? '<b>o motorista</b>' : 'o dono'}</div></div><b class="num small">${money(x.valor)}</b></div>`;
+  const acoes = `<button class="btn ghost" data-act="editarViagem" data-id="${id}">${icon('edit')} Dados</button><button class="btn ghost" data-act="pdfViagem" data-id="${id}">${icon('download')} Relatório</button>${mo?.telefone ? `<button class="btn ghost" data-act="whatsViagem" data-id="${id}">${icon('whatsapp')}</button>` : ''}`
+    + (fechada ? `<button class="btn ghost" data-act="reabrirViagem" data-id="${id}">Reabrir</button>` : `<button class="btn" data-act="fecharViagem" data-id="${id}">${icon('check')} Fechar viagem</button>`);
+  return A.tela(`Viagem #${v.numero || ''}`, `${A.pageHead(`#${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}`,
+      `${badge(st?.label || v.status, st?.tom)}${fechada ? ' ' + badge('Fechada em ' + date(v.fechadoEm), 'ok') : ''} · ${esc(D.nomeVeiculo(ve))} · ${esc(mo?.nome || '—')} · ${date(v.dataSaida)}${v.dataChegada ? ' a ' + date(v.dataChegada) : ''}${D.kmViagem(v) ? ' · ' + km(D.kmViagem(v)) : ''}${cl ? ' · ' + esc(cl.nome) : ''}${v.carga ? ' · ' + esc(v.carga) : ''}`, acoes)}
+    <div class="grid g4">${kpi('Frete', money0(f.frete), f.faltaReceber ? `falta receber ${money0(f.faltaReceber)}` : f.frete ? 'todo recebido' : '<b>defina o valor</b>')}${kpi('Custos', money0(f.custosTotal), `${plural(desp.length + custosNaViagem.length, 'lançamento')}`)}${kpi(`Comissão ${f.pct}%`, money0(f.comissao), esc(mo?.nome || ''))}${kpi('Lucro', `<span class="${f.lucro >= 0 ? 'up' : 'down'}">${money0(f.lucro)}</span>`, percent(f.margem) + ' do frete')}</div>
+    <div class="grid g2 mt">
+      <div class="card"><div class="head"><h2>Receitas</h2><button class="btn sm" data-act="lancarReceita" data-id="${id}">${icon('plus')} Receita</button></div>
+        <div class="list">${[...recAntigos.map((x) => linhaR(x, true)), ...recDocs.map((x) => linhaR(x))].join('') || empty('Lance como o frete foi recebido: PIX ao dono, carta frete, dinheiro com o motorista…', 'money')}</div></div>
+      <div class="card"><div class="head"><h2>Despesas</h2><button class="btn sm" data-act="lancarDespesa" data-id="${id}">${icon('plus')} Despesa</button></div>
+        <div class="list">${custosNaViagem.map(([k, n]) => `<div class="li"><div class="avatar">${icon('receipt')}</div><div class="grow"><div class="t small">${n}</div><div class="s">${(v.pagoMotorista || {})[k] ? '<b>pago pelo motorista</b>' : 'pago pela empresa'}</div></div><b class="num small">${money(v[k])}</b></div>`).join('')}${desp.map(linhaD).join('') || (custosNaViagem.length ? '' : empty('Combustível, pedágio, alimentação… lançados pelo motorista ou aqui.', 'receipt'))}</div></div>
+    </div>
+    <div class="mt">${resumoHTML(f)}</div>
+    <div class="row between mt"><span class="tiny muted">Para mudar frete, comissão ou adiantamento, use <b>Dados</b>. Ao fechar, tudo fica conferido.</span><button class="btn ghost sm" data-act="excluirViagem" data-id="${id}" style="color:var(--crit)">${icon('trash')} Excluir viagem</button></div>`, { back: true });
 }
 
 // ---------- Conferir lançamentos dos motoristas ----------
 function vConferir() {
   const s = S();
   const itens = sortBy(D.aConferir(s).map((x) => {
-    const col = x.origem !== undefined && x.destino !== undefined ? 'viagens' : x.litros !== undefined ? 'abastecimentos' : 'despesas';
+    const col = x.origem !== undefined && x.destino !== undefined ? 'viagens' : x.forma !== undefined ? 'recebimentos' : x.litros !== undefined ? 'abastecimentos' : 'despesas';
     return { x, col, data: col === 'viagens' ? D.dataViagem(x) : x.data };
   }), (i) => i.data, true);
   const desc = ({ x, col }) => col === 'viagens' ? `Viagem #${x.numero || ''} ${esc(x.origem)} → ${esc(x.destino)} · ${D.kmViagem(x) ? int(D.kmViagem(x)) + ' km' : 'km não informado'}${+x.valorFrete ? '' : ' · <b>definir valor do frete</b>'}`
-    : col === 'abastecimentos' ? `Abastecimento · ${x.litros} l · ${int(x.km)} km${x.posto ? ' · ' + esc(x.posto) : ''}` : `${esc(D.nomeCategoria(x.categoria))}${x.descricao ? ' · ' + esc(x.descricao) : ''}`;
-  const act = { viagens: 'editarViagem', abastecimentos: 'editarAbast', despesas: 'editarDespesa' };
+    : col === 'abastecimentos' ? `Abastecimento · ${x.litros} l · ${int(x.km)} km${x.posto ? ' · ' + esc(x.posto) : ''}` : col === 'recebimentos' ? `Recebimento · ${esc(D.nomeForma(x.forma))} · ficou com ${x.com === 'motorista' ? 'o motorista' : 'o dono'}` : `${esc(D.nomeCategoria(x.categoria))}${x.descricao ? ' · ' + esc(x.descricao) : ''}`;
+  const act = { viagens: 'abrirViagem', abastecimentos: 'editarAbast', despesas: 'editarDespesa', recebimentos: 'editarReceita' };
   return A.tela('Conferir', `${A.pageHead('Conferir lançamentos', 'Tudo o que os motoristas lançaram pelo app. Depois de conferido, o motorista não altera mais.', itens.length ? `<button class="btn" data-act="conferirTudo">${icon('check')} Conferir tudo</button>` : '')}
-    <div class="card pad-0"><div class="list" style="padding:0 16px">${itens.map((i) => `<div class="li"><div class="avatar">${icon(i.col === 'viagens' ? 'map' : i.col === 'abastecimentos' ? 'fuel' : 'receipt')}</div>
+    <div class="card pad-0"><div class="list" style="padding:0 16px">${itens.map((i) => `<div class="li"><div class="avatar">${icon(i.col === 'viagens' ? 'map' : i.col === 'abastecimentos' ? 'fuel' : i.col === 'recebimentos' ? 'money' : 'receipt')}</div>
       <div class="grow click" data-act="${act[i.col]}" data-id="${i.x.id}"><div class="t small">${desc(i)}</div><div class="s">${dateShort(i.data)} · ${esc(D.motorista(s, i.x.motoristaId)?.nome || '—')} · ${esc(D.veiculo(s, i.x.veiculoId)?.placa || '—')}${i.x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ''}</div></div>
       ${i.col !== 'viagens' ? `<b class="num">${money(i.x.valor)}</b>` : ''}<button class="btn sm" data-act="conferir" data-ref="${i.col}:${i.x.id}">${icon('check')}</button></div>`).join('') || empty('Tudo conferido. 👍', 'check')}</div></div>`);
 }
@@ -446,7 +564,7 @@ function vVeiculo({ id }) {
         <div class="tiny muted mt-s">Óleo a cada ${v.oleoCadaKm ? km(v.oleoCadaKm) : '—'} · revisão a cada ${v.revisaoCadaKm ? km(v.revisaoCadaKm) : '—'}</div></div>
       <div class="card"><div class="head"><h2>Manutenções</h2></div><div class="list">${man.map((m) => `<a class="li" href="#" data-act="editarManut" data-id="${m.id}"><div class="grow"><div class="t small">${esc(D.nomeManut(m.tipo))}${m.descricao ? ' · ' + esc(m.descricao) : ''}</div><div class="s">${date(m.data)}${m.km ? ' · ' + km(m.km) : ''}${m.oficina ? ' · ' + esc(m.oficina) : ''}</div></div><b class="num small">${money0(m.valor)}</b></a>`).join('') || empty('Nenhuma manutenção registrada.', 'wrench')}</div></div>
     </div>
-    <div class="card pad-0 mt"><div style="padding:16px 16px 0"><h2>Últimas viagens</h2></div><div class="tbl-wrap"><table class="tbl"><tbody>${vgs.map((x) => `<tr class="click" data-act="editarViagem" data-id="${x.id}"><td>${dateShort(x.dataSaida)}</td><td>#${x.numero} ${esc(x.origem)} → ${esc(x.destino)}</td><td class="hide-m small">${esc(D.motorista(s, x.motoristaId)?.nome || '')}</td><td class="r">${money0(x.valorFrete)}</td></tr>`).join('') || `<tr><td>${empty('—')}</td></tr>`}</tbody></table></div></div>`, { back: true });
+    <div class="card pad-0 mt"><div style="padding:16px 16px 0"><h2>Últimas viagens</h2></div><div class="tbl-wrap"><table class="tbl"><tbody>${vgs.map((x) => `<tr class="click" data-act="abrirViagem" data-id="${x.id}"><td>${dateShort(x.dataSaida)}</td><td>#${x.numero} ${esc(x.origem)} → ${esc(x.destino)}</td><td class="hide-m small">${esc(D.motorista(s, x.motoristaId)?.nome || '')}</td><td class="r">${money0(x.valorFrete)}</td></tr>`).join('') || `<tr><td>${empty('—')}</td></tr>`}</tbody></table></div></div>`, { back: true });
 }
 
 // ---------- Motoristas ----------
@@ -474,7 +592,7 @@ function vMotorista({ id, query }) {
     ${segPeriodo(`motorista/${id}`, p)}
     <div class="grid g4">${kpi('Comissões', money0(ac.comissoes), plural(ac.viagens.length, 'viagem', 'viagens'))}${kpi('Pagou na estrada', money0(ac.reembolsos), 'gastos pagos por ele')}${kpi('Ficou com ele', money0(ac.adiantamentos + ac.emEspecie), 'adiantamento + frete em espécie')}${kpi('Saldo do acerto', `<span class="${ac.saldo >= 0 ? '' : 'down'}">${money0(Math.abs(ac.saldo))}</span>`, ac.saldo >= 0 ? 'a empresa paga ao motorista' : 'o motorista devolve à empresa')}</div>
     <div class="card pad-0 mt"><div style="padding:16px 16px 0"><h2>Detalhe</h2></div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Data</th><th>Item</th><th class="r">Valor</th></tr></thead><tbody>
-      ${ac.viagens.map((v) => `<tr><td>${dateShort(D.dataViagem(v))}</td><td>Comissão ${v.comissaoPct}% · #${v.numero} ${esc(v.origem)} → ${esc(v.destino)} (${money0(v.valorFrete)})</td><td class="r up">${money(D.comissao(v))}</td></tr>`).join('')}
+      ${ac.viagens.map((v) => `<tr><td>${dateShort(D.dataViagem(v))}</td><td>Comissão ${D.pctViagem(v, s)}% · #${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)} (${money0(v.valorFrete)})</td><td class="r up">${money(D.comissao(v, s))}</td></tr>`).join('')}
       ${ac.pagos.map((x) => `<tr><td>${dateShort(x.data)}</td><td>Pagou · ${esc(x.descricao)}</td><td class="r up">${money(x.valor)}</td></tr>`).join('')}
       ${ac.especie.map((x) => `<tr><td>${dateShort(x.data)}</td><td>Ficou com ele · ${esc(x.descricao)}</td><td class="r down">−${money(x.valor)}</td></tr>`).join('')}
       ${ac.adiant.map((v) => `<tr><td>${dateShort(v.dataSaida)}</td><td>Adiantamento · viagem #${v.numero}</td><td class="r down">−${money(v.adiantamento)}</td></tr>`).join('')}

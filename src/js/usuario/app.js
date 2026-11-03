@@ -15,8 +15,8 @@ const opVeiculos = (s) => s.veiculos.filter((v) => v.ativo !== false).map((v) =>
 const km = (v) => (+v || 0).toLocaleString('pt-BR') + ' km';
 
 const CAMPOS_ABAST = [
-  { k: 'veiculoId', label: 'Veículo', tipo: 'select', obrig: true, opcoes: opVeiculos, col: 2 },
-  { k: 'km', label: 'Km no painel', tipo: 'number', obrig: true },
+  { k: 'veiculoId', label: 'Veículo', tipo: 'select', obrig: true, opcoes: opVeiculos, col: 2, se: (d) => !d.emViagem },
+  { k: 'km', label: 'Km no painel', tipo: 'inteiro', obrig: true },
   { k: 'litros', label: 'Litros', tipo: 'number', obrig: true },
   { k: 'valor', label: 'Valor total', tipo: 'money', obrig: true },
   { k: 'precoLitro', label: 'Preço por litro', tipo: 'money', dica: 'Preencha 2 de 3: o terceiro é calculado.' },
@@ -27,7 +27,7 @@ const CAMPOS_ABAST = [
 const CAMPOS_DESPESA = [
   { k: 'categoria', label: 'O que foi', tipo: 'select', obrig: true, opcoes: D.CATEGORIAS.filter(([k]) => k !== 'seguro'), col: 2 },
   { k: 'valor', label: 'Valor', tipo: 'money', obrig: true },
-  { k: 'veiculoId', label: 'Veículo', tipo: 'select', opcoes: opVeiculos },
+  { k: 'veiculoId', label: 'Veículo', tipo: 'select', opcoes: opVeiculos, se: (d) => !d.emViagem },
   { k: 'descricao', label: 'Detalhe (opcional)', col: 2 },
   { k: 'pagoPeloMotorista', label: 'Paguei do meu bolso (reembolso no acerto)', tipo: 'checkbox', padrao: true, col: 2 },
 ];
@@ -35,9 +35,21 @@ const CAMPOS_INICIAR = [
   { k: 'veiculoId', label: 'Veículo', tipo: 'select', obrig: true, opcoes: opVeiculos, col: 2 },
   { k: 'origem', label: 'Saindo de', obrig: true, ph: 'Cidade/UF' },
   { k: 'destino', label: 'Indo para', obrig: true, ph: 'Cidade/UF' },
-  { k: 'kmInicio', label: 'Km no painel agora', tipo: 'number', obrig: true },
+  { k: 'dataSaida', label: 'Data de saída', tipo: 'date', obrig: true, padrao: today },
+  { k: 'kmInicio', label: 'Km no painel agora', tipo: 'inteiro', obrig: true },
   { k: 'carga', label: 'Carga (opcional)' },
 ];
+const FORMAS_MOT = D.FORMAS_RECEB.filter(([k]) => ['especie', 'carta_frete', 'pix', 'deposito', 'cheque', 'outro'].includes(k)).map(([k, n]) => [k, k === 'pix' ? 'Cliente pagou ao dono (PIX)' : n]);
+const CAMPOS_RECEB = [
+  { k: 'forma', label: 'O que recebi', tipo: 'select', obrig: true, opcoes: FORMAS_MOT, col: 2 },
+  { k: 'valor', label: 'Valor', tipo: 'money', obrig: true },
+  { k: 'data', label: 'Data', tipo: 'date', obrig: true, padrao: today },
+  { k: 'obs', label: 'Observação (opcional)', col: 2 },
+];
+// viagem em que os lançamentos entram: a em andamento ou, depois de chegar, a última ainda não fechada
+const viagemLanc = () => viagemAtual() || sortBy(meus('viagens').filter((v) => v.status === 'concluida' && !v.fechadoEm), (v) => v.dataChegada || v.dataSaida, true)[0];
+const naViagem = () => { const v = viagemLanc(); return v ? { emViagem: true, veiculoId: v.veiculoId } : { veiculoId: veiculoPadrao() }; };
+const tituloV = (t) => { const v = viagemLanc(); return v ? `${t} · ${esc(D.veiculo(S(), v.veiculoId)?.placa || '')} · ${esc(v.destino)}` : t; };
 
 function formulario(titulo, campos, inicial, salvar, botao = 'Salvar') {
   modal({ title: titulo, body: formHTML('fmo', campos, inicial),
@@ -57,33 +69,43 @@ const A = criarApp({
   contaExtra: () => { const m = eu(); if (!m) return ''; const d = m.cnhValidade ? diffDays(m.cnhValidade, today()) : null;
     return `<div class="small ink2">CNH ${esc(m.cnhCategoria || '')} válida até <b>${date(m.cnhValidade)}</b> ${d != null && d < 0 ? badge('Vencida', 'crit') : d != null && d <= 30 ? badge('Renove logo', 'warn') : ''}<br>Comissão: ${m.comissaoPct || 0}% do frete · veículo: ${esc(D.veiculo(S(), m.veiculoId)?.placa || '—')}</div>`; },
   acoes: {
-    abastecer: () => { formulario('Abastecimento', CAMPOS_ABAST, { veiculoId: veiculoPadrao() }, (d) => {
-      completarTres(d);
+    abastecer: () => { formulario(tituloV('Abastecimento'), CAMPOS_ABAST, naViagem(), (d) => {
+      completarTres(d); d.veiculoId ||= viagemLanc()?.veiculoId;
       if (d.litros <= 0 || d.litros > 1500) return 'Confira os litros';
       const aviso = avisoKm(d.veiculoId, d.km);
-      const salvar = () => A.store.commit((s) => s.abastecimentos.push({ id: uid('ab'), data: today(), motoristaId: A.store.meuRef(), viagemId: viagemAtual()?.id || null, conferido: false, ...d }));
+      const salvar = () => A.store.commit((s) => s.abastecimentos.push({ id: uid('ab'), data: today(), motoristaId: A.store.meuRef(), viagemId: viagemLanc()?.id || null, conferido: false, ...d }));
       if (aviso) { confirmar(aviso + ' Salvar assim mesmo?', { ok: 'Salvar' }).then((y) => { if (y) { salvar(); toast('Abastecimento lançado'); } }); return; }
       salvar(); toast(`Abastecimento lançado: ${money(d.valor)}`);
     }); ligarTres('fmo'); },
-    despesa: () => formulario('Despesa', CAMPOS_DESPESA, { veiculoId: veiculoPadrao() }, (d) => {
-      A.store.commit((s) => s.despesas.push({ id: uid('dp'), data: today(), motoristaId: A.store.meuRef(), viagemId: viagemAtual()?.id || null, conferido: false, ...d }));
+    despesa: () => formulario(tituloV('Despesa'), CAMPOS_DESPESA, { ...naViagem(), pagoPeloMotorista: true }, (d) => {
+      d.veiculoId ||= viagemLanc()?.veiculoId;
+      A.store.commit((s) => s.despesas.push({ id: uid('dp'), data: today(), motoristaId: A.store.meuRef(), viagemId: viagemLanc()?.id || null, conferido: false, ...d }));
       toast(`Despesa lançada: ${money(d.valor)}`);
     }),
     novaViagem: () => formulario('Iniciar viagem', CAMPOS_INICIAR, { veiculoId: veiculoPadrao(), kmInicio: D.kmAtual(S(), veiculoPadrao()) || '' }, (d) => {
       const aviso = avisoKm(d.veiculoId, d.kmInicio); if (aviso) return aviso;
-      A.store.commit((s) => s.viagens.push({ id: uid('vg'), motoristaId: A.store.meuRef(), dataSaida: today(), status: 'em_viagem', conferido: false, ...d }));
+      A.store.commit((s) => s.viagens.push({ id: uid('vg'), motoristaId: A.store.meuRef(), status: 'em_viagem', conferido: false, ...d }));
       toast('Boa viagem!');
     }, 'Iniciar'),
     iniciarPlanejada: (el) => { const v = S().viagens.find((x) => x.id === el.dataset.id);
-      formulario(`Iniciar viagem para ${v.destino}`, [{ k: 'kmInicio', label: 'Km no painel agora', tipo: 'number', obrig: true }], { kmInicio: D.kmAtual(S(), v.veiculoId) || '' }, (d) => {
-        A.store.commit((s) => Object.assign(s.viagens.find((x) => x.id === v.id), { status: 'em_viagem', dataSaida: today(), kmInicio: d.kmInicio })); toast('Boa viagem!');
+      formulario(`Iniciar viagem para ${esc(v.destino)}`, [{ k: 'dataSaida', label: 'Data de saída', tipo: 'date', obrig: true }, { k: 'kmInicio', label: 'Km no painel agora', tipo: 'inteiro', obrig: true }], { dataSaida: today(), kmInicio: D.kmAtual(S(), v.veiculoId) || '' }, (d) => {
+        A.store.commit((s) => Object.assign(s.viagens.find((x) => x.id === v.id), { status: 'em_viagem', dataSaida: d.dataSaida, kmInicio: d.kmInicio })); toast('Boa viagem!');
       }, 'Iniciar'); },
     encerrar: (el) => { const v = S().viagens.find((x) => x.id === el.dataset.id);
-      formulario('Cheguei ao destino', [{ k: 'kmFim', label: 'Km no painel na chegada', tipo: 'number', obrig: true }, { k: 'obs', label: 'Observações (opcional)', tipo: 'textarea', col: 2 }], { kmFim: D.kmAtual(S(), v.veiculoId) || '' }, (d) => {
+      formulario('Cheguei ao destino', [{ k: 'dataChegada', label: 'Data de chegada', tipo: 'date', obrig: true }, { k: 'kmFim', label: 'Km no painel na chegada', tipo: 'inteiro', obrig: true }, { k: 'obs', label: 'Observações (opcional)', tipo: 'textarea', col: 2 }], { dataChegada: today(), kmFim: D.kmAtual(S(), v.veiculoId) || '' }, (d) => {
         if (v.kmInicio && d.kmFim < v.kmInicio) return `O km de chegada precisa ser maior que o de saída (${km(v.kmInicio)})`;
-        A.store.commit((s) => Object.assign(s.viagens.find((x) => x.id === v.id), { status: 'concluida', dataChegada: today(), kmFim: d.kmFim, obs: d.obs || v.obs || '' }));
+        if (d.dataChegada < v.dataSaida) return 'A chegada está antes da saída';
+        A.store.commit((s) => Object.assign(s.viagens.find((x) => x.id === v.id), { status: 'concluida', dataChegada: d.dataChegada, kmFim: d.kmFim, obs: d.obs || v.obs || '' }));
         toast(`Viagem encerrada: ${km(d.kmFim - (v.kmInicio || d.kmFim))} rodados`);
       }, 'Encerrar viagem'); },
+    receber: () => {
+      const v = viagemLanc();
+      if (!v) return toast('Inicie a viagem para lançar o que recebeu');
+      formulario(tituloV('Recebi'), CAMPOS_RECEB, { forma: 'especie' }, (d) => {
+        A.store.commit((s) => s.recebimentos.push({ id: uid('rc'), motoristaId: A.store.meuRef(), viagemId: v.id, veiculoId: v.veiculoId, com: D.comPadrao(d.forma), conferido: false, ...d }));
+        toast(`Recebimento lançado: ${money(d.valor)}`);
+      });
+    },
     apagarLanc: async (el) => {
       if (!(await confirmar('Apagar este lançamento?', { ok: 'Apagar' }))) return;
       const [col, id] = el.dataset.ref.split(':');
@@ -97,7 +119,7 @@ function vInicio() {
   const m = eu();
   const atual = viagemAtual();
   const planejadas = sortBy(meus('viagens').filter((v) => v.status === 'planejada'), (v) => v.dataSaida);
-  const ultimos = sortBy([...meus('abastecimentos'), ...meus('despesas')], (x) => x.data + x.id, true).slice(0, 5);
+  const ultimos = sortBy([...meus('abastecimentos'), ...meus('despesas'), ...meus('recebimentos')], (x) => x.data + x.id, true).slice(0, 5);
   const cnh = m?.cnhValidade ? diffDays(m.cnhValidade, today()) : null;
   return A.tela('Início', `
     ${A.pageHead(`Olá, ${esc((m?.nome || '').split(' ')[0])}`, esc(s.meta.empresa || ''))}
@@ -110,22 +132,23 @@ function vInicio() {
     <div class="grid g2 mt" style="gap:12px">
       <button class="acao-grande" data-act="abastecer"><span class="ic">${icon('fuel')}</span><span class="grow"><div class="t">Abastecer</div><div class="s">Litros, valor e km</div></span></button>
       <button class="acao-grande" data-act="despesa"><span class="ic" style="background:var(--destaque)">${icon('receipt')}</span><span class="grow"><div class="t">Despesa</div><div class="s">Pedágio, refeição, borracharia…</div></span></button>
+      <button class="acao-grande" data-act="receber" style="grid-column:1/-1"><span class="ic" style="background:var(--s1)">${icon('money')}</span><span class="grow"><div class="t">Recebi</div><div class="s">Dinheiro, carta frete ou pagamento do frete</div></span></button>
     </div>
     <h2 class="mt">Últimos lançamentos</h2>
     <div class="card pad-0 mt-s"><div class="list" style="padding:0 16px">${ultimos.map(linha).join('') || empty('Seus abastecimentos e despesas aparecem aqui.', 'list')}</div></div>`);
 }
 
 const linha = (x) => {
-  const ab = x.litros !== undefined;
-  const col = ab ? 'abastecimentos' : 'despesas';
-  return `<div class="li"><div class="avatar">${icon(ab ? 'fuel' : 'receipt')}</div><div class="grow"><div class="t small">${ab ? `Abastecimento · ${(+x.litros).toLocaleString('pt-BR')} l` : esc(D.nomeCategoria(x.categoria))}${x.descricao ? ' · ' + esc(x.descricao) : ''}</div>
-    <div class="s">${dateShort(x.data)} · ${esc(D.veiculo(S(), x.veiculoId)?.placa || '')}${x.pagoPeloMotorista ? ' · pago por mim' : ''}</div></div><b class="num small">${money(x.valor)}</b>
+  const ab = x.litros !== undefined, rc = x.forma !== undefined;
+  const col = rc ? 'recebimentos' : ab ? 'abastecimentos' : 'despesas';
+  return `<div class="li"><div class="avatar">${icon(rc ? 'money' : ab ? 'fuel' : 'receipt')}</div><div class="grow"><div class="t small">${rc ? `Recebi · ${esc(D.nomeForma(x.forma))}` : ab ? `Abastecimento · ${(+x.litros).toLocaleString('pt-BR')} l` : esc(D.nomeCategoria(x.categoria))}${x.descricao || x.obs ? ' · ' + esc(x.descricao || x.obs) : ''}</div>
+    <div class="s">${dateShort(x.data)} · ${esc(D.veiculo(S(), x.veiculoId)?.placa || '')}${x.pagoPeloMotorista ? ' · pago por mim' : ''}${rc ? (x.com === 'motorista' ? ' · ficou comigo' : ' · foi para o dono') : ''}</div></div><b class="num small ${rc ? 'up' : ''}">${money(x.valor)}</b>
     ${x.conferido ? badge('Conferido', 'ok') : `<button class="iconbtn" data-act="apagarLanc" data-ref="${col}:${x.id}" aria-label="Apagar">${icon('trash')}</button>`}</div>`;
 };
 
 function vLancamentos() {
   const viagens = sortBy(meus('viagens'), (v) => v.dataSaida, true).slice(0, 30);
-  const lanc = sortBy([...meus('abastecimentos'), ...meus('despesas')], (x) => x.data + x.id, true).slice(0, 80);
+  const lanc = sortBy([...meus('abastecimentos'), ...meus('despesas'), ...meus('recebimentos')], (x) => x.data + x.id, true).slice(0, 80);
   return A.tela('Lançamentos', `${A.pageHead('Meus lançamentos', 'Depois de conferido pela empresa, o lançamento não pode mais ser alterado.')}
     <div class="card pad-0"><div class="list" style="padding:0 16px">${lanc.map(linha).join('') || empty('Nada lançado ainda.', 'list')}</div></div>
     <h2 class="mt">Minhas viagens</h2>

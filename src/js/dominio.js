@@ -26,7 +26,12 @@ export const kmViagem = (v) => (+v.kmRodado > 0 ? +v.kmRodado : v.kmFim > 0 && v
 // Custos lançados direto na viagem (o acerto): combustível, pedágio, manutenção e outros
 export const CUSTOS_VIAGEM = [['combustivel', 'Combustível'], ['pedagio', 'Pedágio'], ['manutencao', 'Manutenção'], ['outros', 'Outros']];
 export const despesasNaViagem = (v) => (+v.pedagio || 0) + (+v.manutencao || 0) + (+v.outros || 0);
-export const comissao = (v) => ((+v.valorFrete || 0) * (+v.comissaoPct || 0)) / 100;
+// Comissão: a % da viagem ou, sem ela, a do cadastro do motorista
+export const pctViagem = (v, s) => (v.comissaoPct != null && v.comissaoPct !== '' ? +v.comissaoPct : +(s && motorista(s, v.motoristaId)?.comissaoPct) || 0);
+export const comissao = (v, s) => ((+v.valorFrete || 0) * pctViagem(v, s)) / 100;
+// Tudo o que pertence a uma viagem (some junto quando ela é excluída)
+export const LANC_VIAGEM = ['abastecimentos', 'despesas', 'recebimentos'];
+export const lancamentosDa = (s, vid) => LANC_VIAGEM.flatMap((c) => (s[c] || []).filter((x) => x.viagemId === vid).map((x) => ({ col: c, x })));
 const noPeriodo = (d, de, ate) => d && d >= de && d <= ate;
 export const dataViagem = (v) => v.dataChegada || v.dataSaida;
 
@@ -60,7 +65,7 @@ export function resultadoViagem(s, v) {
   const combustivel = (+v.combustivel || 0) + sum(lig(s.abastecimentos), (a) => +a.valor);
   const litros = (+v.litros || 0) + sum(lig(s.abastecimentos), (a) => +a.litros || 0);
   const despesas = despesasNaViagem(v) + sum(lig(s.despesas), (d) => +d.valor);
-  const r = { frete: +v.valorFrete || 0, combustivel, litros, despesas, comissao: comissao(v), km: kmViagem(v) };
+  const r = { frete: +v.valorFrete || 0, combustivel, litros, despesas, comissao: comissao(v, s), km: kmViagem(v) };
   r.custos = r.combustivel + r.despesas + r.comissao;
   r.lucro = r.frete - r.custos;
   r.margem = r.frete ? r.lucro / r.frete : 0;
@@ -80,7 +85,7 @@ export function resultado(s, de, ate) {
     const r = {
       viagens: vs.length, faturamento: sum(vs, (v) => +v.valorFrete), km: sum(vs, kmViagem), litros: sum(f(abast), (a) => +a.litros || 0) + sum(vs, (v) => +v.litros || 0),
       combustivel: sum(f(abast), (a) => +a.valor) + sum(vs, (v) => +v.combustivel || 0), despesas: sum(f(desp), (d) => +d.valor) + sum(vs, despesasNaViagem),
-      manutencao: sum(f(manut), (m) => +m.valor), comissoes: sum(vs, comissao),
+      manutencao: sum(f(manut), (m) => +m.valor), comissoes: sum(vs, (v) => comissao(v, s)),
     };
     r.custos = r.combustivel + r.despesas + r.manutencao + r.comissoes;
     r.resultado = r.faturamento - r.custos;
@@ -99,7 +104,7 @@ export function historico(s, n = 6, fim = monthKey(today())) {
 }
 
 export const aReceber = (s) => s.viagens.filter((v) => v.status === 'concluida' && !v.recebido && +v.valorFrete > 0);
-export const aConferir = (s) => [...s.viagens.filter((v) => v.status === 'concluida'), ...s.abastecimentos, ...s.despesas].filter((x) => !x.conferido && x.motoristaId);
+export const aConferir = (s) => [...s.viagens.filter((v) => v.status === 'concluida'), ...s.abastecimentos, ...s.despesas, ...(s.recebimentos || [])].filter((x) => !x.conferido && x.motoristaId);
 
 // ---------- Recebimento do frete e fechamento da viagem ----------
 // Cada viagem pode receber o frete de vários jeitos; "com" diz com quem o dinheiro ficou.
@@ -109,7 +114,11 @@ export const FORMAS_RECEB = [
 ];
 export const nomeForma = (k) => FORMAS_RECEB.find((f) => f[0] === k)?.[1] || k || '—';
 export const comPadrao = (k) => FORMAS_RECEB.find((f) => f[0] === k)?.[2] || 'dono';
-export const recebimentos = (v) => (Array.isArray(v.recebimentos) ? v.recebimentos : []).filter((r) => +r.valor > 0);
+// Recebimentos da viagem: os lançados (coleção recebimentos) + os antigos gravados dentro da viagem
+export const recebimentos = (v, s) => [
+  ...(Array.isArray(v.recebimentos) ? v.recebimentos : []),
+  ...(s ? (s.recebimentos || []).filter((x) => x.viagemId === v.id) : []),
+].filter((r) => +r.valor > 0);
 
 // Fechamento de uma viagem: quanto ficou com o motorista, o que ele pagou, a comissão e quem deve a quem.
 //   saldo > 0 → o motorista devolve à empresa; saldo < 0 → a empresa paga ao motorista
@@ -121,7 +130,7 @@ export function fechamento(s, v) {
     ...lig(s.abastecimentos).map((a) => ({ k: 'ab:' + a.id, label: `Abastecimento ${date(a.data)}${a.posto ? ' · ' + a.posto : ''}`, valor: +a.valor || 0, pagoMotorista: !!a.pagoPeloMotorista, origem: 'abastecimentos', id: a.id })),
     ...lig(s.despesas).map((d) => ({ k: 'dp:' + d.id, label: `${nomeCategoria(d.categoria)} ${date(d.data)}${d.descricao ? ' · ' + d.descricao : ''}`, valor: +d.valor || 0, pagoMotorista: !!d.pagoPeloMotorista, origem: 'despesas', id: d.id })),
   ];
-  const recs = recebimentos(v);
+  const recs = recebimentos(v, s);
   const r = {
     frete: +v.valorFrete || 0, recs, custos,
     recebidoDono: sum(recs.filter((x) => x.com !== 'motorista'), (x) => +x.valor),
@@ -129,7 +138,7 @@ export function fechamento(s, v) {
     adiantamento: +v.adiantamento || 0,
     gastosMotorista: sum(custos.filter((c) => c.pagoMotorista), (c) => c.valor),
     custosTotal: sum(custos, (c) => c.valor),
-    comissao: comissao(v),
+    comissao: comissao(v, s), pct: pctViagem(v, s),
   };
   r.recebido = r.recebidoDono + r.comMotorista;
   r.faltaReceber = Math.max(0, r.frete - r.recebido);
@@ -153,7 +162,7 @@ export function acerto(s, mid, de, ate) {
       .map((x) => ({ data: x.data, descricao: x.litros !== undefined ? 'Abastecimento' : nomeCategoria(x.categoria), valor: +x.valor || 0 })),
   ];
   const especie = fs.flatMap(({ v, f }) => f.recs.filter((x) => x.com === 'motorista').map((x) => ({ data: dataViagem(v), descricao: `${nomeForma(x.forma)} · viagem #${v.numero}`, valor: +x.valor })));
-  const r = { viagens, adiant, pagos, especie, comissoes: sum(viagens, comissao), reembolsos: sum(pagos, (x) => x.valor), adiantamentos: sum(adiant, (v) => +v.adiantamento), emEspecie: sum(especie, (x) => x.valor) };
+  const r = { viagens, adiant, pagos, especie, comissoes: sum(viagens, (v) => comissao(v, s)), reembolsos: sum(pagos, (x) => x.valor), adiantamentos: sum(adiant, (v) => +v.adiantamento), emEspecie: sum(especie, (x) => x.valor) };
   r.saldo = r.comissoes + r.reembolsos - r.adiantamentos - r.emEspecie;
   return r;
 }
@@ -169,7 +178,7 @@ export function itensCusto(s, de, ate) {
     add('pedagio', dataViagem(v), `Pedágio · ${rota}`, v.pedagio, v.veiculoId, v.motoristaId, 'viagens', v.id);
     add('manutencao', dataViagem(v), `Manutenção · ${rota}`, v.manutencao, v.veiculoId, v.motoristaId, 'viagens', v.id);
     add('outros', dataViagem(v), `Outros · ${rota}`, v.outros, v.veiculoId, v.motoristaId, 'viagens', v.id);
-    add('comissao', dataViagem(v), `Comissão ${v.comissaoPct || 0}% · ${rota}`, comissao(v), v.veiculoId, v.motoristaId, 'viagens', v.id);
+    add('comissao', dataViagem(v), `Comissão ${pctViagem(v, s)}% · ${rota}`, comissao(v, s), v.veiculoId, v.motoristaId, 'viagens', v.id);
   }
   for (const a of s.abastecimentos.filter((a) => noPeriodo(a.data, de, ate))) add('combustivel', a.data, `Abastecimento${a.litros ? ' · ' + (+a.litros).toLocaleString('pt-BR') + ' l' : ''}${a.posto ? ' · ' + a.posto : ''}`, a.valor, a.veiculoId, a.motoristaId, 'abastecimentos', a.id);
   for (const d of s.despesas.filter((d) => noPeriodo(d.data, de, ate))) add(d.categoria || 'outros', d.data, `${nomeCategoria(d.categoria)}${d.descricao ? ' · ' + d.descricao : ''}`, d.valor, d.veiculoId, d.motoristaId, 'despesas', d.id);

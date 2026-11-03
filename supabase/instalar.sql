@@ -502,6 +502,8 @@ insert into frota.colecoes (nome, leitura, escrita, campo_ref, protegidos, trava
   on conflict (nome) do update set leitura = excluded.leitura, escrita = excluded.escrita, campo_ref = excluded.campo_ref, protegidos = excluded.protegidos, trava = excluded.trava;
 insert into frota.colecoes (nome, leitura, escrita, campo_ref, protegidos, trava) values ('manutencoes', 'gestao', 'gestao', null, array[]::text[], null)
   on conflict (nome) do update set leitura = excluded.leitura, escrita = excluded.escrita, campo_ref = excluded.campo_ref, protegidos = excluded.protegidos, trava = excluded.trava;
+insert into frota.colecoes (nome, leitura, escrita, campo_ref, protegidos, trava) values ('recebimentos', 'proprio', 'proprio', 'motoristaId', array[]::text[], 'conferido')
+  on conflict (nome) do update set leitura = excluded.leitura, escrita = excluded.escrita, campo_ref = excluded.campo_ref, protegidos = excluded.protegidos, trava = excluded.trava;
 
 -- ---------- Período de teste das empresas novas (segmento.js › diasTeste) ----------
 alter table frota.empresas alter column teste_ate set default (current_date + 30);

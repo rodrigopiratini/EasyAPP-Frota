@@ -34,6 +34,7 @@ export const SEGMENTO = {
     abastecimentos: { nome: 'Abastecimentos', leitura: 'proprio', escrita: 'proprio', ref: 'motoristaId', trava: 'conferido' },
     despesas: { nome: 'Despesas', leitura: 'proprio', escrita: 'proprio', ref: 'motoristaId', trava: 'conferido' },
     manutencoes: { nome: 'Manutenções', leitura: 'gestao' },
+    recebimentos: { nome: 'Recebimentos', leitura: 'proprio', escrita: 'proprio', ref: 'motoristaId', trava: 'conferido' },
   },
 
   campos: { nome: 'nome', placa: 'placa', modelo: 'modelo', status: 'situação', valorFrete: 'valor do frete', comissaoPct: 'comissão', adiantamento: 'adiantamento',
