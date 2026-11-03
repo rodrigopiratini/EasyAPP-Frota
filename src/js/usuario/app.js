@@ -67,6 +67,21 @@ const A = criarApp({
   rotas: [['/inicio', vInicio], ['/lancamentos', vLancamentos], ['/acerto', vAcerto]],
   nomeUsuario: () => eu()?.nome || '',
   dicaDemo: 'Demonstração: código JOAO, PIN 1234',
+  mais: () => {
+    const v = viagemAtual();
+    return [
+      { icone: 'fuel', texto: 'Abastecimento', act: 'abastecer' },
+      { icone: 'receipt', texto: 'Despesa', act: 'despesa' },
+      v ? { icone: 'money', texto: 'Recebi do frete', act: 'receber' } : null,
+      v ? { icone: 'check', texto: 'Cheguei ao destino', act: 'encerrar', dados: { id: v.id } } : { icone: 'map', texto: 'Iniciar viagem', act: 'novaViagem' },
+    ];
+  },
+  sugestoes: (rota) => rota === '/acerto' ? ['Explique o meu acerto', 'Quanto eu tenho para receber?'] : ['Quanto gastei nesta viagem?', 'Qual foi o meu consumo de diesel?'],
+  iaExtras: (s) => ({ fechamento_viagens: { nome: 'Fechamento das minhas viagens (calculado)', docs: s.viagens.filter((v) => v.motoristaId === A.store.meuRef()).map((v) => {
+    const f = D.fechamento(s, v), r = (x) => Math.round((+x || 0) * 100) / 100;
+    return { id: 'fv_' + v.id, viagemId: v.id, numero: v.numero || null, destino: v.destino, status: v.status, dataSaida: v.dataSaida, fechadoEm: v.fechadoEm || null,
+      comissao: r(f.comissao), adiantamento: r(f.adiantamento), gastosPagosPeloMotorista: r(f.gastosMotorista), freteComMotorista: r(f.comMotorista), saldoMotorista: r(f.saldo) };
+  }) } }),
   contaExtra: () => { const m = eu(); if (!m) return ''; const d = m.cnhValidade ? diffDays(m.cnhValidade, today()) : null;
     return `<div class="small ink2">CNH ${esc(m.cnhCategoria || '')} válida até <b>${date(m.cnhValidade)}</b> ${d != null && d < 0 ? badge('Vencida', 'crit') : d != null && d <= 30 ? badge('Renove logo', 'warn') : ''}<br>Comissão: ${m.comissaoPct || 0}% do frete · veículo: ${esc(D.veiculo(S(), m.veiculoId)?.placa || '—')}</div>`; },
   acoes: {

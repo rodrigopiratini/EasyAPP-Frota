@@ -210,6 +210,55 @@ const viagemFechadaDe = (x) => x?.viagemId && S().viagens.find((v) => v.id === x
 const travaFechada = (x) => { const v = viagemFechadaDe(x); return v ? `A viagem #${v.numero || ''} ${esc(v.destino)} já foi fechada. Reabra a viagem (na página dela) para mudar os lançamentos.` : null; };
 const quemDeveTxt = (f) => (f.saldo > 0.004 ? `Motorista devolve ${money(f.saldo)}` : f.saldo < -0.004 ? `Empresa paga ao motorista ${money(-f.saldo)}` : 'Acerto zerado');
 const numerar = (id) => A.store.commit((s) => { const x = s.viagens.find((y) => y.id === id); if (x && !x.numero) x.numero = D.proximoNumero(s); });
+// ---------- Botão + e assistente: o que dá para fazer em cada tela ----------
+function maisDaTela(rota, p, s) {
+  const ic = (icone, texto, act, dados) => ({ icone, texto, act, dados });
+  const lanc = [ic('fuel', 'Abastecimento', 'novoAbast'), ic('receipt', 'Despesa', 'novaDespesa')];
+  if (rota === '/viagem/:id') {
+    const v = s.viagens.find((x) => x.id === p.id);
+    if (!v) return [ic('map', 'Nova viagem', 'novaViagem')];
+    const d = { id: v.id };
+    return v.fechadoEm ? [ic('download', 'Relatório (PDF)', 'pdfViagem', d), ic('whatsapp', 'Enviar ao motorista', 'whatsViagem', d), ic('refresh', 'Reabrir para ajustes', 'reabrirViagem', d)]
+      : [ic('receipt', 'Lançar despesa da viagem', 'lancarDespesa', d), ic('money', 'Lançar recebimento do frete', 'lancarReceita', d), ic('edit', 'Editar viagem', 'editarViagem', d),
+        v.status === 'concluida' ? ic('check', 'Fechar viagem e acerto', 'fecharViagem', d) : null, ic('whatsapp', 'Enviar ao motorista', 'whatsViagem', d)];
+  }
+  if (rota === '/veiculo/:id') { const d = { v: p.id }; return [ic('fuel', 'Abastecimento deste veículo', 'novoAbast', d), ic('wrench', 'Manutenção deste veículo', 'novaManut', d), ic('edit', 'Editar veículo', 'editarVeiculo', { id: p.id })]; }
+  if (rota === '/motorista/:id') return [ic('edit', 'Editar motorista', 'editarMotorista', { id: p.id }), ic('map', 'Nova viagem', 'novaViagem')];
+  return {
+    '/painel': [ic('map', 'Nova viagem', 'novaViagem'), ...lanc],
+    '/viagens': [ic('map', 'Nova viagem', 'novaViagem')],
+    '/conferir': D.aConferir(s).length ? [ic('check', 'Conferir tudo', 'conferirTudo')] : [],
+    '/despesas': lanc, '/abastecimentos': lanc,
+    '/veiculos': [ic('truck', 'Novo veículo', 'novoVeiculo'), ic('wrench', 'Manutenção', 'novaManut')],
+    '/motoristas': [ic('users', 'Novo motorista', 'novoMotorista')],
+    '/clientes': [ic('store', 'Novo cliente', 'novoCliente')],
+  }[rota] || [ic('map', 'Nova viagem', 'novaViagem'), ...lanc];
+}
+function sugestoesDaTela(rota, p, s) {
+  if (rota === '/viagem/:id') { const v = s.viagens.find((x) => x.id === p.id); return v ? [`Explique o fechamento da viagem para ${v.destino}`, 'Algum lançamento desta viagem parece errado?'] : []; }
+  if (rota === '/veiculo/:id') return ['Qual o consumo deste veículo nos últimos 3 meses?', 'Quanto este veículo deu de resultado este ano?'];
+  if (rota === '/motorista/:id') return ['Como está o acerto deste motorista?', 'Quantas viagens ele fez este mês?'];
+  return {
+    '/painel': ['Qual caminhão deu mais lucro este mês?', 'Como foi este mês comparado com o anterior?'],
+    '/viagens': ['Quais fretes ainda faltam receber?', 'Quais viagens estão em andamento?'],
+    '/conferir': ['Tem algum lançamento estranho para conferir?'],
+    '/despesas': ['Onde estou gastando mais este mês?', 'Quanto gastei de diesel este mês?'],
+    '/abastecimentos': ['Qual veículo tem o pior consumo?'],
+    '/veiculos': ['Algum documento ou manutenção vencendo?'],
+    '/motoristas': ['Alguma CNH vencendo nos próximos 60 dias?'],
+    '/clientes': ['Qual cliente mais deu frete este ano?'],
+  }[rota] || [];
+}
+const r2 = (x) => Math.round((+x || 0) * 100) / 100;
+function fechamentosIA(s) {
+  return s.viagens.map((v) => {
+    const f = D.fechamento(s, v);
+    return { id: 'fv_' + v.id, viagemId: v.id, numero: v.numero || null, origem: v.origem, destino: v.destino, status: v.status, dataSaida: v.dataSaida, dataChegada: v.dataChegada || null,
+      fechadoEm: v.fechadoEm || null, motoristaId: v.motoristaId, veiculoId: v.veiculoId, clienteId: v.clienteId || null,
+      frete: r2(f.frete), recebido: r2(f.recebido), faltaReceber: r2(f.faltaReceber), custosTotal: r2(f.custosTotal), gastosPagosPeloMotorista: r2(f.gastosMotorista),
+      comissao: r2(f.comissao), adiantamento: r2(f.adiantamento), freteComMotorista: r2(f.comMotorista), saldoMotorista: r2(f.saldo), lucro: r2(f.lucro), margemPct: Math.round(f.margem * 1000) / 10 };
+  });
+}
 let ACOES;
 const A = criarApp({
   tipo: 'gestao',
@@ -222,6 +271,9 @@ const A = criarApp({
   rotas: [['/painel', vPainel], ['/viagens', vViagens], ['/viagem/:id', vViagem], ['/conferir', vConferir], ['/abastecimentos', (a) => vDespesas({ ...a, query: { ...a.query, c: 'combustivel' } })], ['/despesas', vDespesas],
     ['/veiculos', vVeiculos], ['/veiculo/:id', vVeiculo], ['/motoristas', vMotoristas], ['/motorista/:id', vMotorista], ['/clientes', vClientes]],
   camposEmpresa: [['cidade', 'Cidade/UF'], ['cnpj', 'CNPJ'], ['whatsapp', 'WhatsApp da empresa', '5554999999999']],
+  mais: (rota, p, s) => maisDaTela(rota, p, s),
+  sugestoes: (rota, p, s) => sugestoesDaTela(rota, p, s),
+  iaExtras: (s) => ({ fechamento_viagens: { nome: 'Fechamento das viagens (calculado)', docs: fechamentosIA(s) } }),
   topoDireita: (s) => `<a href="#/conferir" aria-label="Conferir" style="color:#fff;position:relative;display:inline-grid;place-items:center;width:34px;height:34px">${icon('check')}${D.aConferir(s).length ? `<span class="badge dot" style="position:absolute;top:-4px;left:22px;font-size:10px;padding:1px 6px">${D.aConferir(s).length}</span>` : ''}</a>`,
   aoMudar: (msg, externo, info) => {
     if (!externo || !info?.doc) return;
