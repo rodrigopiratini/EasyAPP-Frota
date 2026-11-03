@@ -588,7 +588,11 @@ function vVeiculo({ id }) {
   if (!v) return A.tela('Veículo', empty('Veículo não encontrado'), { back: true });
   const hist = D.historico(s, 6).map((h) => ({ mes: h.mes, ...h.porVeiculo.find((x) => x.v.id === id) }));
   const al = D.alertas(s).filter((y) => y.link === `#/veiculo/${id}`);
-  const man = sortBy(s.manutencoes.filter((m) => m.veiculoId === id), (m) => m.data, true);
+  // manutenção de oficina + a feita na estrada (despesas de manutenção e pneu, lançadas nas viagens)
+  const man = sortBy([
+    ...s.manutencoes.filter((m) => m.veiculoId === id).map((m) => ({ m, oficina: true })),
+    ...s.despesas.filter((d) => d.veiculoId === id && (d.categoria === 'manutencao' || d.categoria === 'pneu')).map((m) => ({ m, oficina: false })),
+  ], (x) => x.m.data, true);
   const vgs = sortBy(s.viagens.filter((x) => x.veiculoId === id), (x) => x.dataSaida, true).slice(0, 12);
   const [de, ate] = D.periodo('ano');
   const ano = D.resultado(s, de, ate).porVeiculo.find((x) => x.v.id === id) || {};
@@ -600,7 +604,8 @@ function vVeiculo({ id }) {
     <div class="grid g2 mt">
       <div class="card"><div class="head"><h2>Documentos</h2></div><div class="list">${D.VENCIMENTOS.map(([k, n]) => `<div class="li"><div class="grow t small">${n}</div>${v.venc?.[k] ? badge(date(v.venc[k]), v.venc[k] < today() ? 'crit' : '') : '<span class="muted small">não informado</span>'}</div>`).join('')}</div>
         <div class="tiny muted mt-s">Óleo a cada ${v.oleoCadaKm ? km(v.oleoCadaKm) : '—'} · revisão a cada ${v.revisaoCadaKm ? km(v.revisaoCadaKm) : '—'}</div></div>
-      <div class="card"><div class="head"><h2>Manutenções</h2></div><div class="list">${man.map((m) => `<a class="li" href="#" data-act="editarManut" data-id="${m.id}"><div class="grow"><div class="t small">${esc(D.nomeManut(m.tipo))}${m.descricao ? ' · ' + esc(m.descricao) : ''}</div><div class="s">${date(m.data)}${m.km ? ' · ' + km(m.km) : ''}${m.oficina ? ' · ' + esc(m.oficina) : ''}</div></div><b class="num small">${money0(m.valor)}</b></a>`).join('') || empty('Nenhuma manutenção registrada.', 'wrench')}</div></div>
+      <div class="card"><div class="head"><h2>Manutenções</h2><b class="num">${money0(sum(man, (x) => +x.m.valor))}</b></div><div class="list">${man.map(({ m, oficina }) => { const vg = !oficina && m.viagemId && s.viagens.find((v) => v.id === m.viagemId);
+        return `<a class="li" href="#" data-act="${oficina ? 'editarManut' : 'editarDespesa'}" data-id="${m.id}"><div class="avatar">${icon('wrench')}</div><div class="grow"><div class="t small">${oficina ? esc(D.nomeManut(m.tipo)) : esc(D.nomeCategoria(m.categoria))}${m.descricao ? ' · ' + esc(m.descricao) : ''}</div><div class="s">${date(m.data)}${m.km ? ' · ' + km(m.km) : ''}${oficina ? (m.oficina ? ' · ' + esc(m.oficina) : ' · oficina') : ' · na estrada' + (vg ? ` · viagem #${vg.numero || ''} ${esc(vg.destino)}` : '')}</div></div><b class="num small">${money0(m.valor)}</b></a>`; }).join('') || empty('Nenhuma manutenção registrada.', 'wrench')}</div></div>
     </div>
     <div class="card pad-0 mt"><div style="padding:16px 16px 0"><h2>Últimas viagens</h2></div><div class="tbl-wrap"><table class="tbl"><tbody>${vgs.map((x) => `<tr class="click" data-act="abrirViagem" data-id="${x.id}"><td>${dateShort(x.dataSaida)}</td><td>#${x.numero} ${esc(x.origem)} → ${esc(x.destino)}</td><td class="hide-m small">${esc(D.motorista(s, x.motoristaId)?.nome || '')}</td><td class="r">${money0(x.valorFrete)}</td></tr>`).join('') || `<tr><td>${empty('—')}</td></tr>`}</tbody></table></div></div>`, { back: true });
 }
