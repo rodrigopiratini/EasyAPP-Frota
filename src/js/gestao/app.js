@@ -303,18 +303,19 @@ const A = criarApp({
       const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
       const w = window.open('', '_blank'); // abre já no clique (senão o navegador bloqueia a janela)
       const f = D.fechamento(S(), v);
-      A.store.commit((s) => {
+      const ok = A.store.commit((s) => {
         const x = s.viagens.find((y) => y.id === v.id);
         Object.assign(x, { fechadoEm: today(), conferido: true, status: 'concluida', dataChegada: x.dataChegada || today(), numero: x.numero || D.proximoNumero(s) });
         if (f.faltaReceber === 0 && f.frete > 0) Object.assign(x, { recebido: true, recebidoEm: x.recebidoEm || today() });
         for (const { col, x: l } of D.lancamentosDa(s, v.id)) s[col].find((y) => y.id === l.id).conferido = true;
       });
+      if (ok === false) { w?.close(); return; }
       gruposAbertos.delete(v.id);
       toast(`Viagem #${v.numero || ''} fechada · ${quemDeveTxt(f)}`);
       if (w) { w.document.write(relatorio(S(), S().viagens.find((x) => x.id === v.id), S().meta.empresa)); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 400); }
       else toast('Libere as janelas (pop-up) para ver o relatório; ele também fica na página da viagem');
     },
-    reabrirViagem: (el) => { A.store.commit((s) => { s.viagens.find((x) => x.id === el.dataset.id).fechadoEm = null; }); toast('Viagem reaberta para ajustes'); },
+    reabrirViagem: (el) => { if (A.store.commit((s) => { s.viagens.find((x) => x.id === el.dataset.id).fechadoEm = null; }) !== false) toast('Viagem reaberta para ajustes'); },
     pdfViagem: (el) => {
       const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
       const w = window.open('', '_blank'); if (!w) return toast('Libere as janelas (pop-up) para gerar o relatório');
@@ -325,12 +326,12 @@ const A = criarApp({
       const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
       const lig = D.lancamentosDa(S(), v.id).length;
       if (!(await confirmar(`Excluir a viagem #${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}${lig ? ` e os ${lig} lançamento(s) dela (despesas, abastecimentos e recebimentos)` : ''}? Não dá para desfazer.`, { ok: 'Excluir tudo', titulo: 'Excluir viagem' }))) return;
-      A.store.commit((s) => { s.viagens = s.viagens.filter((x) => x.id !== v.id); for (const c of D.LANC_VIAGEM) s[c] = (s[c] || []).filter((x) => x.viagemId !== v.id); });
+      if (A.store.commit((s) => { s.viagens = s.viagens.filter((x) => x.id !== v.id); for (const c of D.LANC_VIAGEM) s[c] = (s[c] || []).filter((x) => x.viagemId !== v.id); }) === false) return;
       toast('Viagem excluída');
       if (location.hash.startsWith('#/viagem/')) location.hash = '#/viagens';
     },
     detalhe: (el) => abrirDetalhe(el.dataset.k, el.dataset.p, el.dataset.cat),
-    receber: (el) => { A.store.commit((s) => Object.assign(s.viagens.find((v) => v.id === el.dataset.id), { recebido: true, recebidoEm: today() })); toast('Frete marcado como recebido'); },
+    receber: (el) => { if (A.store.commit((s) => Object.assign(s.viagens.find((v) => v.id === el.dataset.id), { recebido: true, recebidoEm: today() })) !== false) toast('Frete marcado como recebido'); },
     novoAbast: (el) => { editar({ titulo: 'Abastecimento', colecao: 'abastecimentos', campos: CAMPOS_ABAST, prefixo: 'ab', inicial: el.dataset.v ? { veiculoId: el.dataset.v } : null, antesDeSalvar: (a, antes) => { completarTres(a); if (!antes) a.conferido = true; } }); ligarTres('fed'); ligarVinculo('fed'); },
     editarAbast: (el) => { const doc = S().abastecimentos.find((x) => x.id === el.dataset.id); editar({ titulo: 'Abastecimento', colecao: 'abastecimentos', campos: CAMPOS_ABAST, doc, antesDeSalvar: (a) => travaFechada(a) || (completarTres(a), undefined), antesDeApagar: travaFechada }); ligarTres('fed'); ligarVinculo('fed'); },
     novaDespesa: (el) => {
@@ -364,8 +365,7 @@ const A = criarApp({
     conferirTudo: async () => {
       const itens = D.aConferir(S());
       if (!(await confirmar(`Marcar ${plural(itens.length, 'lançamento')} como conferido? Depois disso os motoristas não alteram mais.`, { ok: 'Conferir tudo' }))) return;
-      A.store.commit((s) => { for (const c of ['viagens', ...D.LANC_VIAGEM]) for (const x of s[c] || []) if (!x.conferido && x.motoristaId && (c !== 'viagens' || x.status === 'concluida')) x.conferido = true; });
-      toast('Tudo conferido');
+      if (A.store.commit((s) => { for (const c of ['viagens', ...D.LANC_VIAGEM]) for (const x of s[c] || []) if (!x.conferido && x.motoristaId && (c !== 'viagens' || x.status === 'concluida')) x.conferido = true; }) !== false) toast('Tudo conferido');
     },
     exportar: (el) => exportarPeriodo(el.dataset.p),
   }),

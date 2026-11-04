@@ -55,7 +55,7 @@ const tituloV = (t) => { const v = viagemLanc(); return v ? `${t} · ${esc(D.vei
 function formulario(titulo, campos, inicial, salvar, botao = 'Salvar') {
   modal({ title: titulo, body: formHTML('fmo', campos, inicial),
     foot: `<button class="btn ghost" data-act="close">Cancelar</button><button class="btn" data-act="ok">${botao}</button>`,
-    handlers: { ok: () => { const { dados, erro } = lerCampos('fmo', campos); if (erro) return toast(erro); const msg = salvar(dados); if (typeof msg === 'string') return toast(msg); closeModal(); } } });
+    handlers: { ok: () => { const { dados, erro } = lerCampos('fmo', campos); if (erro) return toast(erro); const msg = salvar(dados); if (typeof msg === 'string') return toast(msg); if (msg === false) return; closeModal(); } } });
 }
 const avisoKm = (vid, kmNovo) => { const atual = D.kmAtual(S(), vid); return kmNovo < atual - 5 ? `O km informado (${km(kmNovo)}) é menor que o último registrado (${km(atual)}). Confira o painel.` : null; };
 
@@ -90,36 +90,38 @@ const A = criarApp({
       if (d.litros <= 0 || d.litros > 1500) return 'Confira os litros';
       const aviso = avisoKm(d.veiculoId, d.km);
       const salvar = () => A.store.commit((s) => s.abastecimentos.push({ id: uid('ab'), data: today(), motoristaId: A.store.meuRef(), viagemId: viagemLanc()?.id || null, conferido: false, ...d }));
-      if (aviso) { confirmar(aviso + ' Salvar assim mesmo?', { ok: 'Salvar' }).then((y) => { if (y) { salvar(); toast('Abastecimento lançado'); } }); return; }
-      salvar(); toast(`Abastecimento lançado: ${money(d.valor)}`);
+      if (aviso) { confirmar(aviso + ' Salvar assim mesmo?', { ok: 'Salvar' }).then((y) => { if (y && salvar() !== false) toast('Abastecimento lançado'); }); return; }
+      if (salvar() === false) return false;
+      toast(`Abastecimento lançado: ${money(d.valor)}`);
     }); ligarTres('fmo'); },
     despesa: () => formulario(tituloV('Despesa'), CAMPOS_DESPESA, { ...naViagem(), pagoPeloMotorista: true }, (d) => {
       d.veiculoId ||= viagemLanc()?.veiculoId;
-      A.store.commit((s) => s.despesas.push({ id: uid('dp'), data: today(), motoristaId: A.store.meuRef(), viagemId: viagemLanc()?.id || null, conferido: false, ...d }));
+      if (A.store.commit((s) => s.despesas.push({ id: uid('dp'), data: today(), motoristaId: A.store.meuRef(), viagemId: viagemLanc()?.id || null, conferido: false, ...d })) === false) return false;
       toast(`Despesa lançada: ${money(d.valor)}`);
     }),
     novaViagem: () => formulario('Iniciar viagem', CAMPOS_INICIAR, { veiculoId: veiculoPadrao(), kmInicio: D.kmAtual(S(), veiculoPadrao()) || '' }, (d) => {
       const aviso = avisoKm(d.veiculoId, d.kmInicio); if (aviso) return aviso;
-      A.store.commit((s) => s.viagens.push({ id: uid('vg'), motoristaId: A.store.meuRef(), status: 'em_viagem', conferido: false, ...d }));
+      if (A.store.commit((s) => s.viagens.push({ id: uid('vg'), motoristaId: A.store.meuRef(), status: 'em_viagem', conferido: false, ...d })) === false) return false;
       toast('Boa viagem!');
     }, 'Iniciar'),
     iniciarPlanejada: (el) => { const v = S().viagens.find((x) => x.id === el.dataset.id);
       formulario(`Iniciar viagem para ${esc(v.destino)}`, [{ k: 'dataSaida', label: 'Data de saída', tipo: 'date', obrig: true }, { k: 'kmInicio', label: 'Km no painel agora', tipo: 'inteiro', obrig: true }], { dataSaida: today(), kmInicio: D.kmAtual(S(), v.veiculoId) || '' }, (d) => {
-        A.store.commit((s) => Object.assign(s.viagens.find((x) => x.id === v.id), { status: 'em_viagem', dataSaida: d.dataSaida, kmInicio: d.kmInicio })); toast('Boa viagem!');
+        if (A.store.commit((s) => Object.assign(s.viagens.find((x) => x.id === v.id), { status: 'em_viagem', dataSaida: d.dataSaida, kmInicio: d.kmInicio })) === false) return false;
+        toast('Boa viagem!');
       }, 'Iniciar'); },
     encerrar: (el) => { const v = S().viagens.find((x) => x.id === el.dataset.id);
       formulario('Cheguei ao destino', [{ k: 'dataChegada', label: 'Data de chegada', tipo: 'date', obrig: true }, { k: 'kmFim', label: 'Km no painel na chegada', tipo: 'inteiro', obrig: true }, { k: 'obs', label: 'Observações (opcional)', tipo: 'textarea', col: 2 }], { dataChegada: today(), kmFim: D.kmAtual(S(), v.veiculoId) || '' }, (d) => {
         if (v.kmInicio && d.kmFim < v.kmInicio) return `O km de chegada precisa ser maior que o de saída (${km(v.kmInicio)})`;
         if (d.dataChegada < v.dataSaida) return 'A chegada está antes da saída';
         if (d.dataChegada > today()) return 'A data de chegada não pode ser depois de hoje';
-        A.store.commit((s) => Object.assign(s.viagens.find((x) => x.id === v.id), { status: 'concluida', dataChegada: d.dataChegada, kmFim: d.kmFim, obs: d.obs || v.obs || '' }));
+        if (A.store.commit((s) => Object.assign(s.viagens.find((x) => x.id === v.id), { status: 'concluida', dataChegada: d.dataChegada, kmFim: d.kmFim, obs: d.obs || v.obs || '' })) === false) return false;
         toast(`Viagem encerrada: ${km(d.kmFim - (v.kmInicio || d.kmFim))} rodados`);
       }, 'Encerrar viagem'); },
     receber: () => {
       const v = viagemLanc();
       if (!v) return toast('Inicie a viagem para lançar o que recebeu');
       formulario(tituloV('Recebi'), CAMPOS_RECEB, { forma: 'especie' }, (d) => {
-        A.store.commit((s) => s.recebimentos.push({ id: uid('rc'), motoristaId: A.store.meuRef(), viagemId: v.id, veiculoId: v.veiculoId, com: D.comPadrao(d.forma), conferido: false, ...d }));
+        if (A.store.commit((s) => s.recebimentos.push({ id: uid('rc'), motoristaId: A.store.meuRef(), viagemId: v.id, veiculoId: v.veiculoId, com: D.comPadrao(d.forma), conferido: false, ...d })) === false) return false;
         toast(`Recebimento lançado: ${money(d.valor)}`);
       });
     },
@@ -134,7 +136,7 @@ const A = criarApp({
     apagarLanc: async (el) => {
       if (!(await confirmar('Apagar este lançamento?', { ok: 'Apagar' }))) return;
       const [col, id] = el.dataset.ref.split(':');
-      A.store.commit((s) => { s[col] = s[col].filter((x) => x.id !== id); }); toast('Apagado');
+      if (A.store.commit((s) => { s[col] = s[col].filter((x) => x.id !== id); }) !== false) toast('Apagado');
     },
   },
 });
