@@ -39,7 +39,7 @@ export function relatorio(s, v, nomeEmpresa, { paraMotorista = false } = {}) {
   ${f.recs.map((r) => `<tr><td>${esc(D.nomeForma(r.forma))}${r.obs ? ' · ' + esc(r.obs) : ''}</td><td>${r.com === 'motorista' ? 'Motorista' : 'Empresa'}</td><td style="text-align:right">${money(r.valor)}</td></tr>`).join('') || '<tr><td colspan="3">Nenhum recebimento lançado</td></tr>'}
   ${l3('<b>Frete bruto</b>', money(f.frete), 1)}${f.faltaReceber ? l3('Falta receber do cliente', money(f.faltaReceber)) : ''}</table>
   <h2>Custos da viagem</h2><table><tr><th>Item</th><th>Pago por</th><th style="text-align:right">Valor</th></tr>
-  ${f.custos.map((c) => `<tr><td>${esc(c.label)}</td><td>${c.pagoMotorista ? 'Motorista' : 'Empresa'}</td><td style="text-align:right">${money(c.valor)}</td></tr>`).join('') || '<tr><td colspan="3">—</td></tr>'}
+  ${f.custos.map((c) => `<tr><td>${esc(c.label)}</td><td>${c.pagoMotorista ? 'Motorista' : c.meio === 'tag' ? 'Tag do pedágio' : 'Empresa'}</td><td style="text-align:right">${money(c.valor)}</td></tr>`).join('') || '<tr><td colspan="3">—</td></tr>'}
   ${l3('<b>Total de custos</b>', money(f.custosTotal), 1)}</table>
   <h2>Acerto com o motorista</h2><table>
   ${l('Dinheiro do frete que ficou com o motorista', money(f.comMotorista))}${l('Adiantamento recebido', money(f.adiantamento))}

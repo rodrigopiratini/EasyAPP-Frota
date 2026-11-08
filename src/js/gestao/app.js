@@ -168,6 +168,12 @@ const CAMPOS_DESP_V = [
   { k: 'descricao', label: 'Descrição', col: 2 },
   { k: 'pagoPeloMotorista', label: 'Pago pelo motorista (com o dinheiro da viagem)', tipo: 'checkbox', col: 2 },
 ];
+// pedágio: normalmente passa no tag do caminhão (crédito do cliente), sem dinheiro do motorista
+const PAGO_PEDAGIO = [['tag', 'Passou no tag do caminhão'], ['empresa', 'Pago pela empresa'], ['motorista', 'Motorista pagou com o dinheiro da viagem']];
+const camposDespV = (tipo) => tipo === 'pedagio'
+  ? [...CAMPOS_DESP_V.filter((c) => c.k !== 'pagoPeloMotorista'), { k: 'pagoCom', label: 'Como foi pago', tipo: 'select', obrig: true, padrao: 'tag', opcoes: PAGO_PEDAGIO, col: 2 }]
+  : CAMPOS_DESP_V;
+const aplicarPagoCom = (d) => { if (d.pagoCom === undefined) return; d.pagoPeloMotorista = d.pagoCom === 'motorista'; if (d.pagoCom === 'tag') d.meio = 'tag'; else delete d.meio; delete d.pagoCom; };
 const CAMPOS_RECEB = [
   { k: 'forma', label: 'Forma', tipo: 'select', obrig: true, opcoes: D.FORMAS_RECEB.map(([k, n]) => [k, n]) },
   { k: 'valor', label: 'Valor', tipo: 'money', obrig: true },
@@ -183,8 +189,8 @@ function lancarNaViagem(v, tipo) {
       antesDeSalvar: (a) => { completarTres(a); Object.assign(a, daViagem(v), { conferido: true, tanqueCheio: false }); } });
     return ligarTres('fed');
   }
-  editar({ titulo: `${nome} · viagem #${v.numero || ''}`, colecao: 'despesas', campos: CAMPOS_DESP_V, prefixo: 'dp', largo: false,
-    antesDeSalvar: (d) => { Object.assign(d, daViagem(v), { categoria: tipo, conferido: true }); } });
+  editar({ titulo: `${nome} · viagem #${v.numero || ''}`, colecao: 'despesas', campos: camposDespV(tipo), prefixo: 'dp', largo: false,
+    antesDeSalvar: (d) => { aplicarPagoCom(d); Object.assign(d, daViagem(v), { categoria: tipo, conferido: true }); } });
 }
 function receitaForm(v, doc = null) {
   editar({ titulo: doc ? 'Recebimento' : `Receita · viagem #${v.numero || ''}`, colecao: 'recebimentos', campos: CAMPOS_RECEB, prefixo: 'rc', doc, largo: false, antesDeApagar: travaFechada,
@@ -362,7 +368,13 @@ const A = criarApp({
           editar({ titulo: D.nomeCategoria(b.dataset.k), colecao: 'despesas', campos: CAMPOS_DESPESA.filter((c) => c.k !== 'categoria'), prefixo: 'dp', antesDeSalvar: (d, antes) => { d.categoria = b.dataset.k; if (!antes) d.conferido = true; } }); ligarVinculo('fed');
         } } });
     },
-    editarDespesa: (el) => editar({ titulo: 'Despesa', colecao: 'despesas', campos: CAMPOS_DESPESA, doc: S().despesas.find((x) => x.id === el.dataset.id), antesDeSalvar: travaFechada, antesDeApagar: travaFechada }),
+    editarDespesa: (el) => {
+      const doc = S().despesas.find((x) => x.id === el.dataset.id); if (!doc) return;
+      const ped = doc.categoria === 'pedagio';
+      const campos = ped ? [...CAMPOS_DESPESA.filter((c) => c.k !== 'pagoPeloMotorista'), { k: 'pagoCom', label: 'Como foi pago', tipo: 'select', obrig: true, opcoes: PAGO_PEDAGIO, col: 2 }] : CAMPOS_DESPESA;
+      editar({ titulo: D.nomeCategoria(doc.categoria), colecao: 'despesas', campos, doc: ped ? { ...doc, pagoCom: D.pagoPor(doc) } : doc,
+        antesDeSalvar: (d) => travaFechada(d) || (aplicarPagoCom(d), undefined), antesDeApagar: travaFechada });
+    },
     novaManut: (el) => editar({ titulo: 'Manutenção', colecao: 'manutencoes', campos: CAMPOS_MANUT, prefixo: 'mn', inicial: el.dataset.v ? { veiculoId: el.dataset.v, km: D.kmAtual(S(), el.dataset.v) } : null }),
     editarManut: (el) => editar({ titulo: 'Manutenção', colecao: 'manutencoes', campos: CAMPOS_MANUT, doc: S().manutencoes.find((x) => x.id === el.dataset.id) }),
     novoVeiculo: () => editarVeiculo(null),
@@ -596,7 +608,7 @@ function vViagem({ id, query }) {
   const pend = (x) => (x.motoristaId && !x.conferido ? ' ' + badge('do motorista', 'warn') : '');
   const linhaD = ({ col, x }) => `<div class="li click" data-act="${col === 'abastecimentos' ? 'editarAbast' : 'editarDespesa'}" data-id="${x.id}"><div class="avatar">${icon(col === 'abastecimentos' ? 'fuel' : 'receipt')}</div>
     <div class="grow"><div class="t small">${col === 'abastecimentos' ? `Combustível${+x.litros ? ' · ' + (+x.litros).toLocaleString('pt-BR') + ' l' : ''}` : esc(D.nomeCategoria(x.categoria)) + (x.descricao ? ' · ' + esc(x.descricao) : '')}${pend(x)}</div>
-    <div class="s">${dateShort(x.data)} · ${x.pagoPeloMotorista ? 'pago pelo motorista' : 'pago pela empresa'}</div></div><b class="num small">${money(x.valor)}</b></div>`;
+    <div class="s">${dateShort(x.data)} · ${D.PAGO_POR[D.pagoPor(x)]}</div></div><b class="num small">${money(x.valor)}</b></div>`;
   const linhaR = (x, antigo) => `<div class="li ${antigo ? '' : 'click'}" ${antigo ? '' : `data-act="editarReceita" data-id="${x.id}"`}><div class="avatar">${icon('money')}</div>
     <div class="grow"><div class="t small">${esc(D.nomeForma(x.forma))}${x.obs ? ' · ' + esc(x.obs) : ''}${pend(x)}</div><div class="s">${x.data ? dateShort(x.data) + ' · ' : ''}${x.com === 'motorista' ? 'ficou com o motorista' : 'empresa'}</div></div><b class="num small up">${money(x.valor)}</b></div>`;
   const st = fechada ? ['Fechada', 'fechada'] : v.status === 'concluida' ? ['Chegou', 'chegou'] : v.status === 'em_viagem' ? ['Em viagem', 'estrada'] : ['Planejada', 'planejada'];
@@ -650,7 +662,7 @@ function vConferir() {
   const desc = (col, x) => col === 'abastecimentos' ? `Combustível · ${(+x.litros || 0).toLocaleString('pt-BR')} l${x.km ? ' · ' + int(x.km) + ' km' : ''}${x.posto ? ' · ' + esc(x.posto) : ''}` : col === 'recebimentos' ? `Receita · ${esc(D.nomeForma(x.forma))} · ficou com ${x.com === 'motorista' ? 'o motorista' : 'a empresa'}` : `${esc(D.nomeCategoria(x.categoria))}${x.descricao ? ' · ' + esc(x.descricao) : ''}`;
   const act = { abastecimentos: 'editarAbast', despesas: 'editarDespesa', recebimentos: 'editarReceita' };
   const linha = ({ col, x }) => `<div class="li"><button class="check ${x.conferido ? 'on' : ''}" data-act="conferir" data-ref="${col}:${x.id}" aria-label="${x.conferido ? 'Conferido' : 'Conferir'}" title="${x.conferido ? 'Conferido (clique para desmarcar)' : 'Clique para conferir'}">${icon('check')}</button>
-      <div class="grow click" data-act="${act[col]}" data-id="${x.id}"><div class="t small">${desc(col, x)}</div><div class="s">${dateShort(x.data)}${col !== 'recebimentos' ? (x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ' · pago pela empresa') : ''}${x.motoristaId && !x.conferido ? ' · lançado pelo motorista' : ''}</div></div>
+      <div class="grow click" data-act="${act[col]}" data-id="${x.id}"><div class="t small">${desc(col, x)}</div><div class="s">${dateShort(x.data)}${col !== 'recebimentos' ? (x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ' · ' + D.PAGO_POR[D.pagoPor(x)]) : ''}${x.motoristaId && !x.conferido ? ' · lançado pelo motorista' : ''}</div></div>
       <b class="num ${col === 'recebimentos' ? 'up' : ''}">${money(x.valor)}</b></div>`;
   const grupo = (v) => {
     const its = sortBy(D.lancamentosDa(s, v.id), (l) => (l.col === 'recebimentos' ? '0' : '1') + l.x.data);
@@ -701,7 +713,7 @@ function vDespesas({ query }) {
       ${c ? `<div class="mt-s"><a class="btn ghost sm" href="${qs({ c: '' })}">${esc(nomeCat(c))} ✕</a></div>` : ''}</div>
       <div class="card"><div class="head"><h2>Consumo por caminhão</h2><span class="muted small">km/l</span></div>${porV.length ? hbars(sortBy(porV, (x) => -x.c).map((x) => ({ label: D.nomeVeiculo(x.v), value: x.c, vtxt: x.c.toFixed(2).replace('.', ',') + ' km/l', attrs: `data-act="goto" data-h="#/veiculo/${x.v.id}"` })), (v) => v.toFixed(2), { color: 'var(--s3)' }) : empty('Lance litros e km para ver o consumo.', 'fuel')}</div></div>
     <div class="card pad-0 mt"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Data</th><th>Categoria</th><th class="hide-m">Detalhe</th><th class="hide-m">Viagem · caminhão</th><th class="r">Valor</th><th></th></tr></thead>
-      <tbody>${lista.map((i) => { const v = vg(i.x); return `<tr class="click" data-act="${i.col === 'abastecimentos' ? 'editarAbast' : 'editarDespesa'}" data-id="${i.x.id}"><td>${dateShort(i.x.data)}</td><td>${esc(nomeCat(i.cat))}</td><td class="hide-m small">${esc(i.desc)}${i.x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ''}</td>
+      <tbody>${lista.map((i) => { const v = vg(i.x); return `<tr class="click" data-act="${i.col === 'abastecimentos' ? 'editarAbast' : 'editarDespesa'}" data-id="${i.x.id}"><td>${dateShort(i.x.data)}</td><td>${esc(nomeCat(i.cat))}</td><td class="hide-m small">${esc(i.desc)}${i.x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : i.x.meio === 'tag' ? ' · tag do pedágio' : ''}</td>
         <td class="hide-m small">${v ? `#${v.numero || ''} ${esc(v.destino)} · ` : ''}${esc(D.veiculo(s, i.x.veiculoId)?.placa || 'geral')}${i.x.motoristaId ? ' · ' + esc(D.motorista(s, i.x.motoristaId)?.nome || '') : ''}</td><td class="r">${money(i.x.valor)}</td><td>${conferidoBadge(i.x)}</td></tr>`; }).join('') || `<tr><td colspan="6">${empty('—')}</td></tr>`}</tbody></table></div></div>`);
 }
 

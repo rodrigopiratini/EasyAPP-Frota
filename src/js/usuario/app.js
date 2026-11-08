@@ -27,7 +27,9 @@ const camposDespesa = (tipo) => [
   { k: 'veiculoId', label: 'Caminhão', tipo: 'select', opcoes: opVeiculos, col: 2, se: (d) => !d.emViagem },
   { k: 'valor', label: 'Quanto?', tipo: 'money', obrig: true, col: 2 },
   ...(tipo === 'outros' ? [{ k: 'descricao', label: 'O que foi?', obrig: true, col: 2 }] : []),
-  { k: 'pagoPeloMotorista', label: 'Paguei com o dinheiro da viagem', tipo: 'checkbox', padrao: true, col: 2 },
+  tipo === 'pedagio'
+    ? { k: 'pagoCom', label: 'Como pagou?', tipo: 'select', obrig: true, padrao: 'tag', opcoes: [['tag', 'Passou no tag do caminhão'], ['motorista', 'Paguei com o dinheiro da viagem']], col: 2 }
+    : { k: 'pagoPeloMotorista', label: 'Paguei com o dinheiro da viagem', tipo: 'checkbox', padrao: true, col: 2 },
 ];
 // os tipos em quadrados grandes, com desenho
 const SVG = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -111,6 +113,7 @@ const A = criarApp({
     }); ligarTres('fmo'); },
     despesa: () => escolherTipo('Paguei', TIPOS_DESP, (tipo, nome) => formulario(nome, camposDespesa(tipo), { ...naViagem(), pagoPeloMotorista: true }, (d) => {
       d.veiculoId ||= viagemLanc()?.veiculoId;
+      if (d.pagoCom !== undefined) { d.pagoPeloMotorista = d.pagoCom === 'motorista'; if (d.pagoCom === 'tag') d.meio = 'tag'; delete d.pagoCom; }
       const id = uid('dp');
       if (A.store.commit((s) => s.despesas.push({ id, data: today(), categoria: tipo, motoristaId: A.store.meuRef(), viagemId: viagemLanc()?.id || null, conferido: false, ...d })) === false) return false;
       setTimeout(() => lancado(`${nome} · ${money(d.valor)}`, 'despesas', id), 50);
@@ -182,7 +185,7 @@ const linha = (x) => {
   const ab = x.litros !== undefined, rc = x.forma !== undefined;
   const col = rc ? 'recebimentos' : ab ? 'abastecimentos' : 'despesas';
   return `<div class="li"><div class="avatar">${icon(rc ? 'money' : ab ? 'fuel' : 'receipt')}</div><div class="grow"><div class="t small">${rc ? `Recebi · ${esc(D.nomeForma(x.forma))}` : ab ? `Abastecimento · ${(+x.litros).toLocaleString('pt-BR')} l` : esc(D.nomeCategoria(x.categoria))}${x.descricao || x.obs ? ' · ' + esc(x.descricao || x.obs) : ''}</div>
-    <div class="s">${dateShort(x.data)} · ${esc(D.veiculo(S(), x.veiculoId)?.placa || '')}${x.pagoPeloMotorista ? ' · pago por mim' : ''}${rc ? (x.com === 'motorista' ? ' · ficou comigo' : ' · foi para a empresa') : ''}</div></div><b class="num small ${rc ? 'up' : ''}">${money(x.valor)}</b>
+    <div class="s">${dateShort(x.data)} · ${esc(D.veiculo(S(), x.veiculoId)?.placa || '')}${x.pagoPeloMotorista ? ' · pago por mim' : x.meio === 'tag' ? ' · tag do pedágio' : ''}${rc ? (x.com === 'motorista' ? ' · ficou comigo' : ' · foi para a empresa') : ''}</div></div><b class="num small ${rc ? 'up' : ''}">${money(x.valor)}</b>
     ${x.conferido ? badge('Conferido', 'ok') : `<button class="iconbtn" data-act="apagarLanc" data-ref="${col}:${x.id}" aria-label="Apagar">${icon('trash')}</button>`}</div>`;
 };
 

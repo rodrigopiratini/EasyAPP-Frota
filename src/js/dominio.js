@@ -10,6 +10,9 @@ export const CATEGORIAS = [
   ['pedagio', 'Pedágio'], ['alimentacao', 'Alimentação'], ['hospedagem', 'Pernoite / hospedagem'], ['carga', 'Carga e descarga'],
   ['manutencao', 'Manutenção na estrada'], ['pneu', 'Pneu / borracharia'], ['lavagem', 'Lavagem'], ['multa', 'Multa'], ['seguro', 'Seguro / impostos'], ['outros', 'Outros'],
 ];
+// Quem pagou uma despesa: o motorista (dinheiro da viagem), o tag do pedágio (crédito do cliente) ou a empresa
+export const pagoPor = (x) => (x.pagoPeloMotorista ? 'motorista' : x.meio === 'tag' ? 'tag' : 'empresa');
+export const PAGO_POR = { motorista: 'pago pelo motorista', tag: 'tag do pedágio', empresa: 'pago pela empresa' };
 export const nomeCategoria = (k) => CATEGORIAS.find((c) => c[0] === k)?.[1] || k || '—';
 export const TIPOS_MANUT = [['oleo', 'Troca de óleo'], ['revisao', 'Revisão'], ['pneus', 'Pneus'], ['freios', 'Freios'], ['eletrica', 'Elétrica'], ['suspensao', 'Suspensão'], ['outros', 'Outros']];
 export const nomeManut = (k) => TIPOS_MANUT.find((c) => c[0] === k)?.[1] || k || '—';
@@ -156,7 +159,7 @@ export function fechamento(s, v) {
   const custos = [
     ...CUSTOS_VIAGEM.filter(([k]) => +v[k] > 0).map(([k, n]) => ({ k, label: n, valor: +v[k], pagoMotorista: !!pm[k], origem: 'viagem' })),
     ...lig(s.abastecimentos).map((a) => ({ k: 'ab:' + a.id, label: `Abastecimento ${date(a.data)}${a.posto ? ' · ' + a.posto : ''}`, valor: +a.valor || 0, pagoMotorista: !!a.pagoPeloMotorista, origem: 'abastecimentos', id: a.id })),
-    ...lig(s.despesas).map((d) => ({ k: 'dp:' + d.id, label: `${nomeCategoria(d.categoria)} ${date(d.data)}${d.descricao ? ' · ' + d.descricao : ''}`, valor: +d.valor || 0, pagoMotorista: !!d.pagoPeloMotorista, origem: 'despesas', id: d.id })),
+    ...lig(s.despesas).map((d) => ({ k: 'dp:' + d.id, label: `${nomeCategoria(d.categoria)} ${date(d.data)}${d.descricao ? ' · ' + d.descricao : ''}`, valor: +d.valor || 0, pagoMotorista: !!d.pagoPeloMotorista, meio: d.meio, origem: 'despesas', id: d.id })),
   ];
   const recs = recebimentos(v, s);
   const r = {
