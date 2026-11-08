@@ -300,6 +300,13 @@ const A = criarApp({
   acoes: (ACOES = {
     novaViagem: () => novaViagem(),
     editarViagem: (el) => editarViagem(el.dataset.id),
+    menuViagem: (el) => {
+      const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
+      const op = (act, ic, n, cor = '') => `<button class="li click" style="width:100%;border:0;background:none;text-align:left;font:inherit;${cor}" data-act="${act}"><div class="avatar">${icon(ic)}</div><div class="grow t">${n}</div></button>`;
+      modal({ title: `Viagem #${v.numero || ''}`, body: `<div class="list">${op('dados', 'edit', 'Editar dados')}${op('pdf', 'download', 'Relatório (PDF)')}${D.motorista(S(), v.motoristaId)?.telefone ? op('whats', 'whatsapp', 'Enviar ao motorista') : ''}${v.fechadoEm ? op('reabrir', 'refresh', 'Reabrir para ajustar') : ''}${op('excluir', 'trash', 'Excluir viagem', 'color:var(--crit)')}</div>`,
+        handlers: { dados: () => { closeModal(); editarViagem(v.id); }, pdf: () => { closeModal(); ACOES.pdfViagem({ dataset: { id: v.id } }); }, whats: () => { closeModal(); ACOES.whatsViagem({ dataset: { id: v.id } }); },
+          reabrir: () => { closeModal(); ACOES.reabrirViagem({ dataset: { id: v.id } }); }, excluir: () => { closeModal(); ACOES.excluirViagem({ dataset: { id: v.id } }); } } });
+    },
     despesaHoje: () => escolherViagem('Despesa de qual viagem?', true, (id) => (id ? ACOES.lancarDespesa({ dataset: { id } }) : ACOES.novaDespesa())),
     receitaHoje: () => escolherViagem('Receita de qual viagem?', false, (id) => ACOES.lancarReceita({ dataset: { id } })),
     abrirViagem: (el) => { location.hash = '#/viagem/' + el.dataset.id; },
@@ -572,39 +579,64 @@ function vViagens({ query }) {
 }
 
 // ---------- Viagem: tudo o que aconteceu nela e o fechamento ----------
-function vViagem({ id }) {
+function vViagem({ id, query }) {
   const s = S();
   const v = s.viagens.find((x) => x.id === id);
   if (!v) return A.tela('Viagem', empty('Viagem não encontrada'), { back: true });
   const f = D.fechamento(s, v);
-  const st = D.STATUS_VIAGEM[v.status];
   const ve = D.veiculo(s, v.veiculoId), mo = D.motorista(s, v.motoristaId), cl = D.cliente(s, v.clienteId);
   const recDocs = sortBy((s.recebimentos || []).filter((x) => x.viagemId === id), (x) => x.data);
   const recAntigos = Array.isArray(v.recebimentos) ? v.recebimentos.filter((x) => +x.valor > 0) : [];
   const desp = sortBy(D.lancamentosDa(s, id).filter((l) => l.col !== 'recebimentos'), (l) => l.x.data);
   const custosNaViagem = D.CUSTOS_VIAGEM.filter(([k]) => +v[k] > 0);
   const fechada = !!v.fechadoEm;
-  const pend = (x) => (x.motoristaId && !x.conferido ? ' ' + badge('lançado pelo motorista', 'warn') : '');
+  const nLanc = recAntigos.length + recDocs.length + desp.length + custosNaViagem.length;
+  // abre no Acerto quando a viagem já chegou e espera o fechamento
+  const aba = query.t || (v.status === 'concluida' && !fechada ? 'acerto' : 'resumo');
+  const pend = (x) => (x.motoristaId && !x.conferido ? ' ' + badge('do motorista', 'warn') : '');
   const linhaD = ({ col, x }) => `<div class="li click" data-act="${col === 'abastecimentos' ? 'editarAbast' : 'editarDespesa'}" data-id="${x.id}"><div class="avatar">${icon(col === 'abastecimentos' ? 'fuel' : 'receipt')}</div>
-    <div class="grow"><div class="t small">${col === 'abastecimentos' ? `Combustível${+x.litros ? ' · ' + (+x.litros).toLocaleString('pt-BR') + ' l' : ''}${x.posto ? ' · ' + esc(x.posto) : ''}` : esc(D.nomeCategoria(x.categoria)) + (x.descricao ? ' · ' + esc(x.descricao) : '')}${pend(x)}</div>
-    <div class="s">${dateShort(x.data)} · ${x.pagoPeloMotorista ? '<b>pago pelo motorista</b>' : 'pago pela empresa'}</div></div><b class="num small">${money(x.valor)}</b></div>`;
+    <div class="grow"><div class="t small">${col === 'abastecimentos' ? `Combustível${+x.litros ? ' · ' + (+x.litros).toLocaleString('pt-BR') + ' l' : ''}` : esc(D.nomeCategoria(x.categoria)) + (x.descricao ? ' · ' + esc(x.descricao) : '')}${pend(x)}</div>
+    <div class="s">${dateShort(x.data)} · ${x.pagoPeloMotorista ? 'pago pelo motorista' : 'pago pela empresa'}</div></div><b class="num small">${money(x.valor)}</b></div>`;
   const linhaR = (x, antigo) => `<div class="li ${antigo ? '' : 'click'}" ${antigo ? '' : `data-act="editarReceita" data-id="${x.id}"`}><div class="avatar">${icon('money')}</div>
-    <div class="grow"><div class="t small">${esc(D.nomeForma(x.forma))}${x.obs ? ' · ' + esc(x.obs) : ''}${pend(x)}</div><div class="s">${x.data ? dateShort(x.data) + ' · ' : ''}ficou com ${x.com === 'motorista' ? '<b>o motorista</b>' : 'a empresa'}</div></div><b class="num small">${money(x.valor)}</b></div>`;
-  const acoes = `<button class="btn ghost" data-act="editarViagem" data-id="${id}">${icon('edit')} Dados</button><button class="btn ghost" data-act="pdfViagem" data-id="${id}">${icon('download')} Relatório</button>${mo?.telefone ? `<button class="btn ghost" data-act="whatsViagem" data-id="${id}">${icon('whatsapp')}</button>` : ''}`
-    + (fechada ? `<button class="btn ghost" data-act="reabrirViagem" data-id="${id}">Reabrir</button>` : `<button class="btn" data-act="fecharViagem" data-id="${id}">${icon('check')} Fechar viagem</button>`);
-  return A.tela(`Viagem #${v.numero || ''}`, `${A.pageHead(`#${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}`,
-      `${badge(st?.label || v.status, st?.tom)}${fechada ? ' ' + badge('Fechada em ' + date(v.fechadoEm), 'ok') : ''} · ${esc(D.nomeVeiculo(ve))} · ${esc(mo?.nome || '—')} · ${date(v.dataSaida)}${v.dataChegada ? ' a ' + date(v.dataChegada) : ''}${D.kmViagem(v) ? ' · ' + km(D.kmViagem(v)) : ''}${cl ? ' · ' + esc(cl.nome) : ''}${v.carga ? ' · ' + esc(v.carga) : ''}`, acoes)}
-    <div class="grid g4">${kpi('Frete', money0(f.frete), f.faltaReceber ? `falta receber ${money0(f.faltaReceber)}` : f.frete ? 'todo recebido' : '<b>defina o valor</b>')}${kpi('Custos', money0(f.custosTotal), `${plural(desp.length + custosNaViagem.length, 'lançamento')}`)}${kpi(`Comissão ${f.pct}%`, money0(f.comissao), esc(mo?.nome || ''))}${kpi('Lucro', `<span class="${f.lucro >= 0 ? 'up' : 'down'}">${money0(f.lucro)}</span>`, percent(f.margem) + ' do frete')}</div>
-    <div class="grid g2 mt">
-      <div class="card"><div class="head"><h2>Receitas</h2>${fechada ? '' : `<button class="btn sm" data-act="lancarReceita" data-id="${id}">${icon('plus')} Receita</button>`}</div>
-        <div class="list">${[...recAntigos.map((x) => linhaR(x, true)), ...recDocs.map((x) => linhaR(x))].join('') || empty('Lance como o frete foi recebido: PIX ao dono, carta frete, dinheiro com o motorista…', 'money')}</div></div>
-      <div class="card"><div class="head"><h2>Despesas</h2>${fechada ? '' : `<button class="btn sm" data-act="lancarDespesa" data-id="${id}">${icon('plus')} Despesa</button>`}</div>
-        <div class="list">${custosNaViagem.map(([k, n]) => `<div class="li"><div class="avatar">${icon('receipt')}</div><div class="grow"><div class="t small">${n}</div><div class="s">${(v.pagoMotorista || {})[k] ? '<b>pago pelo motorista</b>' : 'pago pela empresa'}</div></div><b class="num small">${money(v[k])}</b></div>`).join('')}${desp.map(linhaD).join('') || (custosNaViagem.length ? '' : empty('Combustível, pedágio, alimentação… lançados pelo motorista ou aqui.', 'receipt'))}</div></div>
-    </div>
-    <div class="mt">${resumoHTML(f)}</div>
-    <div class="row between mt"><span></span><button class="btn ghost sm" data-act="excluirViagem" data-id="${id}" style="color:var(--crit)">${icon('trash')} Excluir viagem</button></div>`, { back: true });
+    <div class="grow"><div class="t small">${esc(D.nomeForma(x.forma))}${x.obs ? ' · ' + esc(x.obs) : ''}${pend(x)}</div><div class="s">${x.data ? dateShort(x.data) + ' · ' : ''}${x.com === 'motorista' ? 'ficou com o motorista' : 'empresa'}</div></div><b class="num small up">${money(x.valor)}</b></div>`;
+  const st = fechada ? ['Fechada', 'fechada'] : v.status === 'concluida' ? ['Chegou', 'chegou'] : v.status === 'em_viagem' ? ['Em viagem', 'estrada'] : ['Planejada', 'planejada'];
+  const tab = (k, n) => `<a href="#/viagem/${id}?t=${k}" class="${aba === k ? 'on' : ''}">${n}</a>`;
+  const linhaInfo = (a, b) => `<div class="l"><span>${a}</span><span>${b}</span></div>`;
+  const devolve = f.saldo > 0.004, paga = f.saldo < -0.004;
+  let corpo;
+  if (aba === 'lanc') {
+    corpo = `<div class="card pad-0"><div class="vg-h"><h2>Receitas</h2>${fechada ? '' : `<button class="btn sm" data-act="lancarReceita" data-id="${id}">${icon('plus')} Receita</button>`}</div>
+        <div class="list" style="padding:0 16px">${[...recAntigos.map((x) => linhaR(x, true)), ...recDocs.map((x) => linhaR(x))].join('') || empty('Nenhuma receita', 'money')}</div>
+        <div class="vg-total"><span>Recebido</span><b>${money(f.recebido)}</b></div></div>
+      <div class="card pad-0 mt"><div class="vg-h"><h2>Despesas</h2>${fechada ? '' : `<button class="btn sm" data-act="lancarDespesa" data-id="${id}">${icon('plus')} Despesa</button>`}</div>
+        <div class="list" style="padding:0 16px">${custosNaViagem.map(([k, n]) => `<div class="li"><div class="avatar">${icon('receipt')}</div><div class="grow"><div class="t small">${n}</div><div class="s">${(v.pagoMotorista || {})[k] ? 'pago pelo motorista' : 'pago pela empresa'}</div></div><b class="num small">${money(v[k])}</b></div>`).join('')}${desp.map(linhaD).join('') || (custosNaViagem.length ? '' : empty('Nenhuma despesa', 'receipt'))}</div>
+        <div class="vg-total"><span>Gasto</span><b>${money(f.custosTotal)}</b></div></div>`;
+  } else if (aba === 'acerto') {
+    const l = (sinal, txt, val, cls = '') => `<div class="l ${cls}"><span class="sinal">${sinal}</span><span>${txt}</span><b>${money(val)}</b></div>`;
+    corpo = `<div class="vg-acerto"><div class="res"><small>Acerto com ${esc((mo?.nome || 'o motorista').split(' ')[0])}</small>
+        <b>${devolve ? 'Motorista devolve ' + money(f.saldo) : paga ? 'Empresa paga ' + money(-f.saldo) : 'Acerto zerado'}</b></div>
+      <div class="conta">${l('+', `Comissão ${f.pct}% do frete`, f.comissao)}${l('+', 'Ele pagou na estrada', f.gastosMotorista)}${l('−', 'Frete que ficou com ele', f.comMotorista)}${l('−', 'Adiantamento', f.adiantamento)}
+        ${l('=', devolve ? 'Motorista devolve' : 'A pagar ao motorista', Math.abs(f.saldo), 'fim')}</div></div>
+      ${fechada ? `<div class="aviso mt">${icon('check')}<span>Fechada em ${date(v.fechadoEm)}</span></div><button class="btn ghost block mt-s" data-act="reabrirViagem" data-id="${id}">Reabrir para ajustar</button>`
+        : v.status === 'concluida' ? `<button class="btn block vg-fechar mt" data-act="fecharViagem" data-id="${id}">${icon('check')} Fechar viagem</button>` : ''}
+      <div class="grid g2 mt-s" style="gap:10px"><button class="btn ghost" data-act="pdfViagem" data-id="${id}">${icon('download')} Relatório</button>${mo?.telefone ? `<button class="btn ghost" data-act="whatsViagem" data-id="${id}">${icon('whatsapp')} WhatsApp</button>` : '<span></span>'}</div>`;
+  } else {
+    corpo = `${f.frete ? (f.faltaReceber > 0.004 ? `<a class="vg-receber" href="#/viagem/${id}?t=lanc"><span>Falta receber</span><b>${money(f.faltaReceber)}</b></a>` : `<div class="vg-receber ok"><span>Frete todo recebido</span><b>${icon('check')}</b></div>`) : `<button class="vg-receber" data-act="editarViagem" data-id="${id}"><span>Defina o valor do frete</span><b>${icon('edit')}</b></button>`}
+      <div class="vg-num">
+        <div><small>Frete</small><b>${money0(f.frete)}</b><span>recebido ${money0(f.recebido)}</span></div>
+        <div><small>Custos</small><b>${money0(f.custosTotal)}</b><span>${plural(desp.length + custosNaViagem.length, 'despesa')}</span></div>
+        <div><small>Comissão</small><b>${money0(f.comissao)}</b><span>${f.pct}% · ${esc((mo?.nome || '').split(' ')[0])}</span></div>
+        <div><small>Lucro</small><b class="${f.lucro >= 0 ? 'up' : 'down'}">${money0(f.lucro)}</b><span>${percent(f.margem)} do frete</span></div>
+      </div>
+      <div class="card vg-info mt">${linhaInfo('Cliente', esc(cl?.nome || '—'))}${linhaInfo('Carga', esc(v.carga || '—'))}${linhaInfo('Saída', date(v.dataSaida) + (v.kmInicio ? ' · ' + km(v.kmInicio) : ''))}${linhaInfo('Chegada', v.dataChegada ? date(v.dataChegada) + (v.kmFim ? ' · ' + km(v.kmFim) : '') : 'na estrada')}${D.kmViagem(v) ? linhaInfo('Rodado', km(D.kmViagem(v))) : ''}${v.obs ? linhaInfo('Observação', esc(v.obs)) : ''}</div>`;
+  }
+  return A.tela(`Viagem #${v.numero || ''}`, `
+    <div class="vg-topo"><div class="row between" style="align-items:flex-start;gap:10px"><div><div class="rota">${esc(v.origem)} → ${esc(v.destino)}</div>
+      <div class="linha"><span class="pill ${st[1]}">${st[0]}</span><span>${esc(mo?.nome || '—')} · ${esc(ve?.placa || '—')} · saiu ${dateShort(v.dataSaida)}</span></div></div>
+      <button class="vg-menu" data-act="menuViagem" data-id="${id}" aria-label="Mais opções">⋯</button></div>
+      <nav class="vg-abas">${tab('resumo', 'Resumo')}${tab('lanc', `Lançamentos <small>${nLanc}</small>`)}${tab('acerto', 'Acerto')}</nav></div>
+    ${corpo}`, { back: true });
 }
-
 // ---------- Conferir lançamentos dos motoristas ----------
 const gruposAbertos = new Set();
 const colDe = (x) => (x.origem !== undefined && x.destino !== undefined ? 'viagens' : x.forma !== undefined ? 'recebimentos' : x.litros !== undefined ? 'abastecimentos' : 'despesas');

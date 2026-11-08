@@ -68,3 +68,40 @@
 .atalhos a { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 4px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); text-align: center; }
 .atalhos a svg { color: var(--primaria); }
 @media (min-width: 901px) { .grade-grande { grid-template-columns: repeat(4, 1fr); } .grade-grande .bt-grande.largo { grid-column: span 2; } }
+
+/* ---------- Página da viagem: topo fixo + abas bem visíveis ---------- */
+.vg-topo { background: var(--primaria-escura); color: #fff; border-radius: 18px; padding: 14px 14px 10px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 12px; }
+.vg-topo .rota { font-family: var(--font-t); font-size: 21px; line-height: 1.2; }
+.vg-topo .linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; font-size: 13.5px; color: #CFE2DB; }
+.vg-topo .pill { border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 700; }
+.pill.estrada { background: #FCE9C8; color: #7A4A00; } .pill.chegou { background: var(--destaque); color: #fff; } .pill.fechada { background: #DDF0E5; color: #1F6B41; } .pill.planejada { background: #DCE8F7; color: #23527F; }
+.vg-menu { flex: none; width: 40px; height: 40px; border-radius: 12px; border: 0; background: rgba(255, 255, 255, .14); color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
+.vg-abas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: rgba(255, 255, 255, .12); border-radius: 14px; padding: 4px; }
+.vg-abas a { text-align: center; padding: 10px 4px; border-radius: 11px; color: #fff; font-weight: 700; font-size: 15px; white-space: nowrap; }
+.vg-abas a.on { background: #fff; color: var(--primaria-escura); box-shadow: 0 2px 8px rgba(0, 0, 0, .18); }
+.vg-abas small { display: inline-block; min-width: 20px; border-radius: 999px; padding: 0 6px; margin-left: 2px; font-size: 12px; background: var(--destaque); color: #fff; }
+.vg-receber { display: flex; justify-content: space-between; align-items: center; width: 100%; background: var(--destaque-claro); border: 1px solid #F3C98A; color: #7A4A00; border-radius: 16px; padding: 14px 16px; font: 700 16px var(--font); margin-bottom: 12px; cursor: pointer; }
+.vg-receber b { font-family: var(--font-t); font-size: 21px; font-weight: 500; }
+.vg-receber.ok { background: #E6F2EA; border-color: #B9DCC5; color: #1F6B41; }
+.vg-num { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vg-num > div { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.vg-num small { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+.vg-num b { font-family: var(--font-t); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.vg-num span { font-size: 12.5px; color: var(--ink-3); }
+.vg-info .l { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+.vg-info .l:last-child { border-bottom: 0; }
+.vg-info .l span:first-child { color: var(--ink-3); } .vg-info .l span:last-child { font-weight: 600; text-align: right; }
+.vg-h { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 4px; }
+.vg-total { display: flex; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--ink-3); }
+.vg-total b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.vg-acerto { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+.vg-acerto .res { background: var(--primaria-escura); color: #fff; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+.vg-acerto .res small { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--destaque); font-weight: 700; }
+.vg-acerto .res b { font-family: var(--font-t); font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.vg-acerto .conta { padding: 6px 16px 12px; }
+.vg-acerto .l { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; padding: 11px 0; border-bottom: 1px dashed var(--line); font-size: 15px; }
+.vg-acerto .l b { font-variant-numeric: tabular-nums; }
+.vg-acerto .sinal { font-weight: 700; color: var(--ink-3); text-align: center; }
+.vg-acerto .l.fim { border-bottom: 0; border-top: 2px solid var(--ink); margin-top: 4px; font-weight: 700; font-size: 16px; }
+.vg-fechar { min-height: 56px; font-size: 18px; }
+@media (min-width: 901px) { .vg-num { grid-template-columns: repeat(4, 1fr); } }
