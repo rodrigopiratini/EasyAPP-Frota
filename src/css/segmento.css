@@ -105,3 +105,9 @@
 .vg-acerto .l.fim { border-bottom: 0; border-top: 2px solid var(--ink); margin-top: 4px; font-weight: 700; font-size: 16px; }
 .vg-fechar { min-height: 56px; font-size: 18px; }
 @media (min-width: 901px) { .vg-num { grid-template-columns: repeat(4, 1fr); } }
+/* lista de viagens e acessos dos motoristas */
+.pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.pill.receber { background: #FBE7E5; color: #9B2C24; }
+.vg-lista .li { padding: 12px 16px; }
+.acesso-mot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.acesso-cod { font-size: 15px; } .acesso-cod b { font-family: ui-monospace, monospace; font-size: 16px; letter-spacing: .06em; }

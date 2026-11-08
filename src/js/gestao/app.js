@@ -313,6 +313,15 @@ const A = criarApp({
         handlers: { dados: () => { closeModal(); editarViagem(v.id); }, pdf: () => { closeModal(); ACOES.pdfViagem({ dataset: { id: v.id } }); }, whats: () => { closeModal(); ACOES.whatsViagem({ dataset: { id: v.id } }); },
           reabrir: () => { closeModal(); ACOES.reabrirViagem({ dataset: { id: v.id } }); }, excluir: () => { closeModal(); ACOES.excluirViagem({ dataset: { id: v.id } }); } } });
     },
+    copiarMot: (el) => {
+      const m = S().motoristas.find((x) => x.id === el.dataset.id), a = acessosMot.find((x) => x.ref === el.dataset.id);
+      if (!m || !a) return;
+      try { navigator.clipboard.writeText(msgMotorista(a, m)).then(() => toast('Mensagem copiada: cole no WhatsApp ou SMS'), () => toast(`Código ${a.codigo} · PIN ${a.pin}`)); } catch { toast(`Código ${a.codigo} · PIN ${a.pin}`); }
+    },
+    gerarAcessoMot: async (el) => {
+      const m = S().motoristas.find((x) => x.id === el.dataset.id); if (!m) return;
+      try { await A.store.acessos.criar(m.id, m.nome); toast('Acesso criado'); pintarAcessosMot(); } catch (e) { toast(e.message); }
+    },
     despesaHoje: () => escolherViagem('Despesa de qual viagem?', true, (id) => (id ? ACOES.lancarDespesa({ dataset: { id } }) : ACOES.novaDespesa())),
     receitaHoje: () => escolherViagem('Receita de qual viagem?', false, (id) => ACOES.lancarReceita({ dataset: { id } })),
     abrirViagem: (el) => { location.hash = '#/viagem/' + el.dataset.id; },
@@ -572,22 +581,27 @@ function exportarPeriodo(p) {
 }
 
 // ---------- Viagens ----------
-function vViagens({ query }) {
+// situação de uma viagem, do jeito que o dono pensa nela (e a ordem em que aparece na lista)
+function situacao(s, v, arec) {
+  if (v.status === 'planejada') return { txt: 'Planejada', cls: 'planejada', ordem: 2 };
+  if (v.status === 'em_viagem') return { txt: 'Em viagem', cls: 'estrada', ordem: 1 };
+  if (!v.fechadoEm) return { txt: 'Chegou · fechar', cls: 'chegou', ordem: 0 };
+  if (arec.has(v.id)) return { txt: 'A receber', cls: 'receber', ordem: 3 };
+  return { txt: 'Fechada', cls: 'fechada', ordem: 4 };
+}
+function vViagens() {
   const s = S();
-  const f = query.f || 'abertas';
-  const arecL = D.aReceber(s), arec = new Set(arecL.map((v) => v.id));
-  const filtros = { abertas: (v) => v.status !== 'concluida', receber: (v) => arec.has(v.id), concluidas: (v) => v.status === 'concluida', todas: () => true };
-  const lista = sortBy(s.viagens.filter(filtros[f]), (v) => v.dataSaida + String(v.numero).padStart(6, '0'), true);
-  const totRec = sum(arecL, (v) => D.faltaReceber(s, v));
-  return A.tela('Viagens', `${A.pageHead('Viagens', f === 'receber' ? `A receber: <b>${money0(totRec)}</b>` : '', A.busca('Buscar destino, placa, motorista…') + `<button class="btn" data-act="novaViagem">${icon('plus')} Viagem</button>`)}
-    <div class="seg mb" style="max-width:100%;overflow-x:auto">${[['abertas', 'Em andamento'], ['receber', 'A receber'], ['concluidas', 'Concluídas'], ['todas', 'Todas']].map(([v, n]) => `<button class="${f === v ? 'on' : ''}" data-act="goto" data-h="#/viagens?f=${v}">${n}</button>`).join('')}</div>
-    <div class="card pad-0"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Viagem</th><th class="hide-m">Veículo · motorista</th><th>Saída</th><th>Situação</th><th class="r">Frete</th><th class="r hide-m">Lucro</th><th class="r hide-m">Km</th><th></th></tr></thead>
-    <tbody>${lista.slice(0, 300).map((v) => { const st = D.STATUS_VIAGEM[v.status]; const ve = D.veiculo(s, v.veiculoId), mo = D.motorista(s, v.motoristaId), cl = D.cliente(s, v.clienteId);
-      return `<tr data-busca="${esc(`${v.numero} ${v.origem} ${v.destino} ${ve?.placa} ${mo?.nome} ${cl?.nome} ${v.carga}`)}"><td class="click" data-act="abrirViagem" data-id="${v.id}"><b>#${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}</b><div class="tiny muted">${esc(cl?.nome || 'sem cliente')}${v.carga ? ' · ' + esc(v.carga) : ''}</div></td>
-        <td class="hide-m small">${esc(ve?.placa || '—')} · ${esc(mo?.nome || '—')}</td><td>${dateShort(v.dataSaida)}</td>
-        <td>${badge(st?.label || v.status, st?.tom)} ${conferidoBadge(v)}${v.status === 'concluida' && +v.valorFrete > 0 ? (v.recebido ? ' ' + badge('Recebido', 'ok') : '') : ''}</td>
-        <td class="r">${+v.valorFrete ? money0(v.valorFrete) : '<span class="muted">definir</span>'}</td>${(() => { const r = D.resultadoViagem(s, v); return `<td class="r hide-m">${+v.valorFrete ? `<b class="${r.lucro >= 0 ? 'up' : 'down'}">${money0(r.lucro)}</b><div class="tiny muted">${percent(r.margem)} do frete</div>` : '—'}</td>`; })()}<td class="r hide-m">${D.kmViagem(v) ? int(D.kmViagem(v)) : '—'}</td>
-        <td class="r" style="white-space:nowrap">${arec.has(v.id) ? `<button class="btn ghost sm" data-act="receber" data-id="${v.id}">Recebido</button> ` : ''}<button class="btn ${v.fechadoEm || v.status !== 'concluida' ? 'ghost' : ''} sm" data-act="abrirViagem" data-id="${v.id}" title="Abrir a viagem">${v.fechadoEm ? icon('check') + ' Fechada' : v.status === 'concluida' ? icon('money') + ' Fechar' : 'Abrir'}</button> <button class="iconbtn" data-act="excluirViagem" data-id="${v.id}" aria-label="Excluir viagem" title="Excluir viagem">${icon('trash')}</button></td></tr>`; }).join('') || `<tr><td colspan="8">${empty('Nenhuma viagem aqui.', 'map')}</td></tr>`}</tbody></table></div></div>`);
+  const arec = new Set(D.aReceber(s).map((v) => v.id));
+  const lista = s.viagens.map((v) => ({ v, st: situacao(s, v, arec) }))
+    .sort((a, b) => (a.st.ordem < 3 || b.st.ordem < 3 ? a.st.ordem - b.st.ordem : 0) || (D.dataViagem(b.v) || '').localeCompare(D.dataViagem(a.v) || ''));
+  return A.tela('Viagens', `${A.pageHead('Viagens', '', A.busca('Buscar destino, placa, motorista…') + `<button class="btn" data-act="novaViagem">${icon('plus')} Viagem</button>`)}
+    <div class="card pad-0"><div class="list vg-lista">${lista.slice(0, 300).map(({ v, st }) => {
+      const ve = D.veiculo(s, v.veiculoId), mo = D.motorista(s, v.motoristaId), cl = D.cliente(s, v.clienteId);
+      const falta = st.cls === 'receber' ? D.faltaReceber(s, v) : 0;
+      return `<a class="li" href="#/viagem/${v.id}" data-busca="${esc(`${v.numero} ${v.origem} ${v.destino} ${ve?.placa} ${mo?.nome} ${cl?.nome || ''} ${v.carga || ''}`)}">
+        <div class="grow"><div class="t"><b>${esc(v.origem)} → ${esc(v.destino)}</b></div><div class="s">#${v.numero || ''} · ${esc(mo?.nome || '—')} · ${esc(ve?.placa || '—')} · ${dateShort(v.dataSaida)}</div></div>
+        <div class="r"><span class="pill ${st.cls}">${st.txt}</span><div class="num small" style="margin-top:4px">${falta ? 'falta ' + money0(falta) : +v.valorFrete ? money0(v.valorFrete) : '<span class="muted">sem frete</span>'}</div></div></a>`;
+    }).join('') || `<div style="padding:16px">${empty('Nenhuma viagem ainda.', 'map')}</div>`}</div></div>`);
 }
 
 // ---------- Viagem: tudo o que aconteceu nela e o fechamento ----------
@@ -764,15 +778,32 @@ function vVeiculo({ id }) {
 }
 
 // ---------- Motoristas ----------
+const linkMotorista = () => { const u = new URL('../app/', location.href); u.searchParams.set('entrar', 'usuario'); if (A.store.modo === 'local') u.searchParams.set('demo', '1'); return u.href; };
+const msgMotorista = (a, m) => `Olá, ${String(m.nome || '').split(' ')[0]}! Este é o app EasyAPP Frota da ${A.store.empresa()?.nome || S().meta.empresa || ''}:\n${linkMotorista()}\n\nCódigo: ${a.codigo}\nPIN: ${a.pin}\n\nPara instalar: abra o link no Chrome (Android) ou no Safari (iPhone) e toque em "Adicionar à tela inicial".`;
+let acessosMot = [];
+async function pintarAcessosMot() {
+  try { acessosMot = await A.store.acessos.listar(); } catch { acessosMot = []; }
+  for (const el of document.querySelectorAll('[data-acesso]')) {
+    const m = S().motoristas.find((x) => x.id === el.dataset.acesso); if (!m) continue;
+    const a = acessosMot.find((x) => x.ref === m.id);
+    el.innerHTML = a ? `<span class="acesso-cod">Código <b>${esc(a.codigo)}</b> · PIN <b>${esc(a.pin)}</b>${a.ativo ? '' : ' · bloqueado'}</span>
+        <span class="row gap-s"><a class="btn sm" target="_blank" rel="noopener" href="${waLink(m.telefone, msgMotorista(a, m))}">${icon('whatsapp')} Enviar</a><button class="btn ghost sm" data-act="copiarMot" data-id="${m.id}">Copiar</button></span>`
+      : `<span class="muted small">Sem acesso ao app</span><button class="btn sm" data-act="gerarAcessoMot" data-id="${m.id}">${icon('plus')} Gerar acesso</button>`;
+  }
+}
 function vMotoristas() {
   const s = S();
   const [de, ate] = D.periodo('mes');
-  return A.tela('Motoristas', `${A.pageHead('Motoristas', '', `<button class="btn ghost" data-act="goto" data-h="#/config">${icon('link')} Acessos</button><button class="btn" data-act="novoMotorista">${icon('plus')} Motorista</button>`)}
-    <div class="card pad-0"><div class="list" style="padding:0 16px">${sortBy(s.motoristas, (m) => (m.ativo === false ? 'z' : '') + m.nome).map((m) => {
+  setTimeout(pintarAcessosMot, 0);
+  return A.tela('Motoristas', `${A.pageHead('Motoristas', '', `<button class="btn" data-act="novoMotorista">${icon('plus')} Motorista</button>`)}
+    <div class="col" style="gap:10px">${sortBy(s.motoristas, (m) => (m.ativo === false ? 'z' : '') + m.nome).map((m) => {
       const ac = D.acerto(s, m.id, de, ate);
       const cnh = m.cnhValidade && m.cnhValidade < today() ? badge('CNH vencida', 'crit') : '';
-      return `<a class="li ${m.ativo === false ? 'off' : ''}" href="#/motorista/${m.id}" data-busca="${esc(m.nome)}"><div class="avatar">${esc(iniciais(m.nome))}</div><div class="grow"><div class="t">${esc(m.nome)} ${cnh}</div><div class="s">${esc(D.veiculo(s, m.veiculoId)?.placa || 'sem veículo')} · comissão ${m.comissaoPct || 0}% · ${plural(ac.viagens.length, 'viagem', 'viagens')} no mês</div></div><div class="r"><div class="small muted">acerto do mês</div><b class="num">${money0(ac.saldo)}</b></div></a>`;
-    }).join('') || empty('Cadastre o primeiro motorista.', 'users')}</div></div>`);
+      return `<div class="card pad-0 ${m.ativo === false ? 'off' : ''}"><a class="li" style="padding:12px 16px" href="#/motorista/${m.id}" data-busca="${esc(m.nome)}"><div class="avatar">${esc(iniciais(m.nome))}</div>
+          <div class="grow"><div class="t">${esc(m.nome)} ${cnh}</div><div class="s">${esc(D.veiculo(s, m.veiculoId)?.placa || 'sem caminhão')} · comissão ${m.comissaoPct || 0}%</div></div>
+          <div class="r"><div class="small muted">acerto do mês</div><b class="num">${money0(Math.abs(ac.saldo))}</b></div></a>
+        ${m.ativo === false ? '' : `<div class="acesso-mot" data-acesso="${m.id}"><span class="muted small">carregando acesso…</span></div>`}</div>`;
+    }).join('') || `<div class="card">${empty('Cadastre o primeiro motorista.', 'users')}</div>`}</div>`);
 }
 
 function vMotorista({ id, query }) {
