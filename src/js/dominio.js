@@ -136,7 +136,8 @@ export const aConferir = (s) => [...s.viagens.filter((v) => v.status === 'conclu
 // ---------- Recebimento do frete e fechamento da viagem ----------
 // Cada viagem pode receber o frete de vários jeitos; "com" diz com quem o dinheiro ficou.
 export const FORMAS_RECEB = [
-  ['pix', 'PIX / transferência ao dono', 'dono'], ['deposito', 'Depósito do cliente', 'dono'], ['boleto', 'Boleto / fatura', 'dono'],
+  ['adiantamento_cliente', 'Adiantamento do cliente', 'dono'], ['vale_pedagio', 'Vale-pedágio (crédito no tag)', 'dono'],
+  ['pix', 'PIX / transferência à empresa', 'dono'], ['deposito', 'Depósito do cliente', 'dono'], ['boleto', 'Boleto / fatura', 'dono'],
   ['carta_frete', 'Carta frete', 'motorista'], ['especie', 'Dinheiro com o motorista', 'motorista'], ['cheque', 'Cheque', 'dono'], ['outro', 'Outro', 'dono'],
 ];
 export const nomeForma = (k) => FORMAS_RECEB.find((f) => f[0] === k)?.[1] || k || '—';

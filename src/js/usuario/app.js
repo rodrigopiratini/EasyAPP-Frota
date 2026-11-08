@@ -170,7 +170,7 @@ const linha = (x) => {
   const ab = x.litros !== undefined, rc = x.forma !== undefined;
   const col = rc ? 'recebimentos' : ab ? 'abastecimentos' : 'despesas';
   return `<div class="li"><div class="avatar">${icon(rc ? 'money' : ab ? 'fuel' : 'receipt')}</div><div class="grow"><div class="t small">${rc ? `Recebi · ${esc(D.nomeForma(x.forma))}` : ab ? `Abastecimento · ${(+x.litros).toLocaleString('pt-BR')} l` : esc(D.nomeCategoria(x.categoria))}${x.descricao || x.obs ? ' · ' + esc(x.descricao || x.obs) : ''}</div>
-    <div class="s">${dateShort(x.data)} · ${esc(D.veiculo(S(), x.veiculoId)?.placa || '')}${x.pagoPeloMotorista ? ' · pago por mim' : ''}${rc ? (x.com === 'motorista' ? ' · ficou comigo' : ' · foi para o dono') : ''}</div></div><b class="num small ${rc ? 'up' : ''}">${money(x.valor)}</b>
+    <div class="s">${dateShort(x.data)} · ${esc(D.veiculo(S(), x.veiculoId)?.placa || '')}${x.pagoPeloMotorista ? ' · pago por mim' : ''}${rc ? (x.com === 'motorista' ? ' · ficou comigo' : ' · foi para a empresa') : ''}</div></div><b class="num small ${rc ? 'up' : ''}">${money(x.valor)}</b>
     ${x.conferido ? badge('Conferido', 'ok') : `<button class="iconbtn" data-act="apagarLanc" data-ref="${col}:${x.id}" aria-label="Apagar">${icon('trash')}</button>`}</div>`;
 };
 
