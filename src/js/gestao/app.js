@@ -360,7 +360,7 @@ const A = criarApp({
       if (A.store.commit((s) => fecharNoEstado(s, v.id)) === false) { w?.close(); return; }
       gruposAbertos.delete(v.id); selecionadas.delete(v.id);
       toast(`Viagem #${v.numero || ''} fechada · ${quemDeveTxt(f)}`);
-      if (w) { w.document.write(relatorio(S(), S().viagens.find((x) => x.id === v.id), S().meta.empresa)); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 400); }
+      if (w) { w.document.write(relatorio(S(), S().viagens.find((x) => x.id === v.id), S().meta.empresa)); w.document.close(); }
       else toast('Libere as janelas (pop-up) para ver o relatório; ele também fica na página da viagem');
     },
     // ---- acerto de várias viagens do mesmo motorista ----
@@ -382,7 +382,7 @@ const A = criarApp({
       if (A.store.commit((s) => { for (const v of vs) fecharNoEstado(s, v.id); }) === false) { w?.close(); return; }
       selecionadas.clear();
       toast(`${vs.length} viagens fechadas`);
-      if (w) { w.document.write(relatorioConjunto(S(), ids.map((id) => S().viagens.find((x) => x.id === id)), S().meta.empresa)); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 400); }
+      if (w) { w.document.write(relatorioConjunto(S(), ids.map((id) => S().viagens.find((x) => x.id === id)), S().meta.empresa)); w.document.close(); }
       location.hash = '#/conferir';
     },
     pdfConjunto: (el) => {
@@ -394,7 +394,7 @@ const A = criarApp({
     pdfViagem: (el) => {
       const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
       const w = window.open('', '_blank'); if (!w) return toast('Libere as janelas (pop-up) para gerar o relatório');
-      w.document.write(relatorio(S(), v, S().meta.empresa)); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 400);
+      w.document.write(relatorio(S(), v, S().meta.empresa)); w.document.close();
     },
     whatsViagem: (el) => { const v = S().viagens.find((x) => x.id === el.dataset.id); if (v) window.open(waLink(D.motorista(S(), v.motoristaId)?.telefone, textoWhats(S(), v)), '_blank', 'noopener'); },
     excluirViagem: async (el) => {
