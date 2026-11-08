@@ -51,3 +51,30 @@ export function relatorio(s, v, nomeEmpresa, { paraMotorista = false } = {}) {
   <div class="sig"><div>${esc(mo?.nome || 'Motorista')}</div><div>${esc(nomeEmpresa || 'Empresa')}</div></div>
   <p style="font-size:11px;color:#777;margin-top:24px">Gerado em ${date(today())} pelo EasyAPP Frota.</p></body></html>`;
 }
+
+// Acerto de várias viagens do mesmo motorista num relatório só (resumo por viagem + a conta somada)
+export function relatorioConjunto(s, vs, nomeEmpresa) {
+  const fs = vs.map((v) => ({ v, f: D.fechamento(s, v) }));
+  const soma = (k) => fs.reduce((a, x) => a + (+x.f[k] || 0), 0);
+  const tot = { frete: soma('frete'), comissao: soma('comissao'), gastos: soma('gastosMotorista'), ficou: soma('comMotorista'), adiant: soma('adiantamento'), saldo: soma('saldo') };
+  const mo = D.motorista(s, vs[0]?.motoristaId);
+  const quem = tot.saldo > 0.004 ? `Motorista devolve à empresa: ${money(tot.saldo)}` : tot.saldo < -0.004 ? `Empresa paga ao motorista: ${money(-tot.saldo)}` : 'Acerto zerado';
+  const td = (x, r) => `<td${r ? ' style="text-align:right"' : ''}>${x}</td>`;
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Acerto de ${esc(mo?.nome || '')} · ${vs.length} viagens</title>
+  <style>body{font:13.5px/1.45 system-ui,sans-serif;color:#111;margin:28px}h1{font-size:20px;margin:0}h2{font-size:15px;margin:18px 0 6px;border-bottom:2px solid #111;padding-bottom:3px}
+  table{width:100%;border-collapse:collapse}td,th{padding:5px 4px;border-bottom:1px solid #ddd;text-align:left}th{font-size:11.5px;color:#555}.tot{font-size:17px;font-weight:700;border:2px solid #111;padding:10px;margin-top:14px}
+  .sig{margin-top:56px;display:flex;gap:40px}.sig div{flex:1;border-top:1px solid #111;padding-top:4px;text-align:center;font-size:12px}small{color:#666}@media print{button{display:none}}</style></head><body>
+  <button onclick="print()" style="float:right;padding:8px 14px">Imprimir / salvar PDF</button>
+  <h1>${esc(nomeEmpresa || '')} · Acerto de ${esc(mo?.nome || '')}</h1><div>${vs.length} viagens · ${date(vs.map((v) => v.dataSaida).sort()[0])} a ${date(vs.map((v) => v.dataChegada || v.dataSaida).sort().pop())}</div>
+  <h2>Viagens</h2><table><tr><th>Viagem</th><th style="text-align:right">Frete</th><th style="text-align:right">Comissão</th><th style="text-align:right">Pagou</th><th style="text-align:right">Ficou com ele</th><th style="text-align:right">Saldo</th></tr>
+  ${fs.map(({ v, f }) => `<tr>${td(`#${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}<br><small>${date(v.dataSaida)} a ${date(v.dataChegada)}</small>`)}${td(money(f.frete), 1)}${td(money(f.comissao), 1)}${td(money(f.gastosMotorista), 1)}${td(money(f.comMotorista + f.adiantamento), 1)}${td((f.saldo > 0.004 ? '− ' : '') + money(Math.abs(f.saldo)), 1)}</tr>`).join('')}
+  <tr style="font-weight:700">${td('Total')}${td(money(tot.frete), 1)}${td(money(tot.comissao), 1)}${td(money(tot.gastos), 1)}${td(money(tot.ficou + tot.adiant), 1)}${td((tot.saldo > 0.004 ? '− ' : '') + money(Math.abs(tot.saldo)), 1)}</tr></table>
+  <h2>Conta</h2><table>
+  <tr><td>(+) Comissões</td><td style="text-align:right">${money(tot.comissao)}</td></tr><tr><td>(+) Ele pagou na estrada</td><td style="text-align:right">${money(tot.gastos)}</td></tr>
+  <tr><td>(−) Frete que ficou com ele</td><td style="text-align:right">${money(tot.ficou)}</td></tr><tr><td>(−) Adiantamentos</td><td style="text-align:right">${money(tot.adiant)}</td></tr></table>
+  <div class="tot">${quem}</div>
+  <h2>O que ele pagou</h2><table>${fs.flatMap(({ v, f }) => f.custos.filter((c) => c.pagoMotorista).map((c) => `<tr>${td(`#${v.numero || ''} · ${esc(c.label)}`)}${td(money(c.valor), 1)}</tr>`)).join('') || '<tr><td>Nada</td></tr>'}</table>
+  <h2>Frete que ficou com ele</h2><table>${fs.flatMap(({ v, f }) => f.recs.filter((r) => r.com === 'motorista').map((r) => `<tr>${td(`#${v.numero || ''} · ${esc(D.nomeForma(r.forma))}`)}${td(money(r.valor), 1)}</tr>`)).join('') || '<tr><td>Nada</td></tr>'}</table>
+  <div class="sig"><div>${esc(mo?.nome || 'Motorista')}</div><div>${esc(nomeEmpresa || 'Empresa')}</div></div>
+  <p style="font-size:11px;color:#777;margin-top:24px">Gerado em ${date(today())} pelo EasyAPP Frota.</p></body></html>`;
+}

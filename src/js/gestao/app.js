@@ -6,7 +6,7 @@ import { money, money0, moneyK, int, percent, date, dateShort, today, esc, sortB
 import { icon, kpi, badge, empty, iniciais, toast, confirmar, insightCard, download, toCSV, waLink, modal, closeModal } from '../core/ui.js';
 import { chart, hbars, legend } from '../core/charts.js';
 import { ligarTres, completarTres } from '../tres.js';
-import { resumoHTML, relatorio, textoWhats } from './fechamento.js';
+import { resumoHTML, relatorio, relatorioConjunto, textoWhats } from './fechamento.js';
 
 // Motorista e caminhão andam juntos: escolher um puxa o outro (dá para trocar quando outro motorista cobre)
 function ligarVinculo(formId) {
@@ -276,6 +276,26 @@ function fechamentosIA(s) {
       comissao: r2(f.comissao), adiantamento: r2(f.adiantamento), freteComMotorista: r2(f.comMotorista), saldoMotorista: r2(f.saldo), lucro: r2(f.lucro), margemPct: Math.round(f.margem * 1000) / 10 };
   });
 }
+// fecha uma viagem no estado: tudo conferido, numerada, recebida se não falta nada
+function fecharNoEstado(s, id) {
+  const x = s.viagens.find((y) => y.id === id); if (!x) return;
+  const f = D.fechamento(s, x);
+  Object.assign(x, { fechadoEm: today(), conferido: true, status: 'concluida', dataChegada: x.dataChegada || today(), numero: x.numero || D.proximoNumero(s) });
+  if (f.faltaReceber === 0 && f.frete > 0) Object.assign(x, { recebido: true, recebidoEm: x.recebidoEm || today() });
+  for (const { col, x: l } of D.lancamentosDa(s, id)) s[col].find((y) => y.id === l.id).conferido = true;
+}
+const selecionadas = new Set();
+function pintarBarraSel() {
+  let b = document.getElementById('barraSel');
+  if (!selecionadas.size || !location.hash.startsWith('#/conferir')) { b?.remove(); return; }
+  const vs = [...selecionadas].map((id) => S().viagens.find((x) => x.id === id)).filter(Boolean);
+  const mo = D.motorista(S(), vs[0]?.motoristaId);
+  if (!b) { b = document.createElement('div'); b.id = 'barraSel'; b.className = 'barra-sel'; document.body.appendChild(b); }
+  b.innerHTML = `<button class="lk" data-x="limpar">✕</button><button class="btn grow" data-x="abrir">Acerto de ${vs.length} ${vs.length === 1 ? 'viagem' : 'viagens'} · ${esc((mo?.nome || '').split(' ')[0])} ›</button>`;
+  b.onclick = (e) => { const x = e.target.closest('[data-x]')?.dataset.x; if (x === 'limpar') ACOES.limparSel(); if (x === 'abrir') ACOES.abrirConjunto(); };
+}
+window.addEventListener('hashchange', () => setTimeout(pintarBarraSel, 0));
+
 let ACOES;
 const A = criarApp({
   tipo: 'gestao',
@@ -285,7 +305,7 @@ const A = criarApp({
   tabs: [['#/hoje', 'home', 'Hoje'], ['#/viagens', 'map', 'Viagens'], ['#/conferir', 'check', 'Conferir'], ['#/painel', 'chart', 'Resultados'], ['#/mais', 'menu', 'Mais']],
   badges: (s) => ({ '#/conferir': D.aConferir(s).length }),
   ativo: (h, r) => (h === '#/despesas' && r.startsWith('#/abastecimentos')) || (h === '#/viagens' && r.startsWith('#/viagem/')) || (h === '#/veiculos' && r.startsWith('#/veiculo/')) || (h === '#/motoristas' && r.startsWith('#/motorista/')),
-  rotas: [['/hoje', vHoje], ['/painel', vPainel], ['/viagens', vViagens], ['/viagem/:id', vViagem], ['/conferir', vConferir], ['/abastecimentos', (a) => vDespesas({ ...a, query: { ...a.query, c: 'combustivel' } })], ['/despesas', vDespesas],
+  rotas: [['/hoje', vHoje], ['/painel', vPainel], ['/viagens', vViagens], ['/viagem/:id', vViagem], ['/conferir', vConferir], ['/acerto-conjunto', vAcertoConjunto], ['/abastecimentos', (a) => vDespesas({ ...a, query: { ...a.query, c: 'combustivel' } })], ['/despesas', vDespesas],
     ['/veiculos', vVeiculos], ['/veiculo/:id', vVeiculo], ['/motoristas', vMotoristas], ['/motorista/:id', vMotorista], ['/clientes', vClientes]],
   camposEmpresa: [['cidade', 'Cidade/UF'], ['cnpj', 'CNPJ'], ['whatsapp', 'WhatsApp da empresa', '5554999999999']],
   sugestoes: (rota, p, s) => sugestoesDaTela(rota, p, s),
@@ -337,17 +357,38 @@ const A = criarApp({
       const v = S().viagens.find((x) => x.id === el.dataset.id); if (!v) return;
       const w = window.open('', '_blank'); // abre já no clique (senão o navegador bloqueia a janela)
       const f = D.fechamento(S(), v);
-      const ok = A.store.commit((s) => {
-        const x = s.viagens.find((y) => y.id === v.id);
-        Object.assign(x, { fechadoEm: today(), conferido: true, status: 'concluida', dataChegada: x.dataChegada || today(), numero: x.numero || D.proximoNumero(s) });
-        if (f.faltaReceber === 0 && f.frete > 0) Object.assign(x, { recebido: true, recebidoEm: x.recebidoEm || today() });
-        for (const { col, x: l } of D.lancamentosDa(s, v.id)) s[col].find((y) => y.id === l.id).conferido = true;
-      });
-      if (ok === false) { w?.close(); return; }
-      gruposAbertos.delete(v.id);
+      if (A.store.commit((s) => fecharNoEstado(s, v.id)) === false) { w?.close(); return; }
+      gruposAbertos.delete(v.id); selecionadas.delete(v.id);
       toast(`Viagem #${v.numero || ''} fechada · ${quemDeveTxt(f)}`);
       if (w) { w.document.write(relatorio(S(), S().viagens.find((x) => x.id === v.id), S().meta.empresa)); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 400); }
       else toast('Libere as janelas (pop-up) para ver o relatório; ele também fica na página da viagem');
+    },
+    // ---- acerto de várias viagens do mesmo motorista ----
+    selViagem: (el, e) => {
+      e?.stopPropagation?.();
+      const id = el.dataset.id, v = S().viagens.find((x) => x.id === id); if (!v) return;
+      const outra = [...selecionadas].map((x) => S().viagens.find((y) => y.id === x)).find((x) => x && x.motoristaId !== v.motoristaId);
+      if (!selecionadas.has(id) && outra) return toast('Selecione viagens do mesmo motorista');
+      if (selecionadas.has(id)) selecionadas.delete(id); else selecionadas.add(id);
+      el.classList.toggle('on', selecionadas.has(id));
+      pintarBarraSel();
+    },
+    limparSel: () => { selecionadas.clear(); document.querySelectorAll('.sel-vg.on').forEach((b) => b.classList.remove('on')); pintarBarraSel(); },
+    abrirConjunto: () => { if (selecionadas.size) location.hash = '#/acerto-conjunto?ids=' + [...selecionadas].join(','); },
+    fecharConjunto: (el) => {
+      const ids = el.dataset.ids.split(','), vs = ids.map((id) => S().viagens.find((x) => x.id === id)).filter(Boolean);
+      if (!vs.length) return;
+      const w = window.open('', '_blank');
+      if (A.store.commit((s) => { for (const v of vs) fecharNoEstado(s, v.id); }) === false) { w?.close(); return; }
+      selecionadas.clear();
+      toast(`${vs.length} viagens fechadas`);
+      if (w) { w.document.write(relatorioConjunto(S(), ids.map((id) => S().viagens.find((x) => x.id === id)), S().meta.empresa)); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 400); }
+      location.hash = '#/conferir';
+    },
+    pdfConjunto: (el) => {
+      const vs = el.dataset.ids.split(',').map((id) => S().viagens.find((x) => x.id === id)).filter(Boolean);
+      const w = window.open('', '_blank'); if (!w) return toast('Libere as janelas (pop-up) para ver o relatório');
+      w.document.write(relatorioConjunto(S(), vs, S().meta.empresa)); w.document.close();
     },
     reabrirViagem: (el) => { if (A.store.commit((s) => { s.viagens.find((x) => x.id === el.dataset.id).fechadoEm = null; }) !== false) toast('Viagem reaberta para ajustes'); },
     pdfViagem: (el) => {
@@ -688,6 +729,7 @@ function vConferir() {
     const podeFechar = tudo && v.status === 'concluida';
     return `<div class="card pad-0 grupo cf ${gruposAbertos.has(v.id) || viagens.length === 1 ? 'aberto' : ''}">
       <div class="cf-cab click" data-act="grupo" data-id="${v.id}">
+        ${v.status === 'concluida' ? `<button class="sel-vg ${selecionadas.has(v.id) ? 'on' : ''}" data-act="selViagem" data-id="${v.id}" aria-label="Selecionar para acerto conjunto">${icon('check')}</button>` : ''}
         <div class="grow"><div class="t"><b>${esc(v.origem)} → ${esc(v.destino)}</b></div>
           <div class="s">${esc((mo?.nome || '—').split(' ')[0])} · ${esc(ve?.placa || '—')} · ${dateShort(v.dataChegada || v.dataSaida)}${v.status !== 'concluida' ? ' · <b class="em-viagem">em viagem</b>' : ''}</div></div>
         <div class="r"><span class="cf-cont ${tudo ? 'tudo' : ''}">${icon('check')} ${ok}/${its.length}</span><div class="s">${acertoCurto(f)}</div></div></div>
@@ -696,11 +738,37 @@ function vConferir() {
           : its.length && !tudo ? `<button class="btn ghost block" data-act="conferirGrupo" data-id="${v.id}">${icon('check')} Marcar todos</button>` : ''}
           <a class="btn ghost block" href="#/viagem/${v.id}">Abrir viagem</a></div></div></div>`;
   };
+  setTimeout(pintarBarraSel, 0);
   return A.tela('Conferir', `${A.pageHead('Conferir', '')}
     <div class="col" style="gap:10px">${viagens.map(grupo).join('')}
     ${soltos.length ? `<div class="card pad-0 grupo cf ${gruposAbertos.has('') ? 'aberto' : ''}"><div class="cf-cab click" data-act="grupo" data-id=""><div class="grow"><div class="t"><b>Sem viagem</b></div></div><div class="r"><span class="cf-cont">${icon('check')} 0/${soltos.length}</span></div></div>
       <div class="itens">${soltos.map((x) => linha({ col: colDe(x), x })).join('')}<div class="cf-acoes"><button class="btn ghost block" data-act="conferirGrupo" data-id="">${icon('check')} Marcar todos</button></div></div></div>` : ''}
     ${viagens.length || soltos.length ? '' : `<div class="card">${empty('Tudo conferido.', 'check')}</div>`}</div>`);
+}
+
+// ---------- Acerto de várias viagens do mesmo motorista ----------
+function vAcertoConjunto({ query }) {
+  const s = S();
+  const vs = sortBy(String(query.ids || '').split(',').map((id) => s.viagens.find((x) => x.id === id)).filter(Boolean), (v) => v.dataSaida);
+  if (!vs.length) return A.tela('Acerto', empty('Nenhuma viagem selecionada'), { back: true });
+  const mo = D.motorista(s, vs[0].motoristaId);
+  const fs = vs.map((v) => ({ v, f: D.fechamento(s, v), its: D.lancamentosDa(s, v.id) }));
+  const soma = (k) => fs.reduce((a, x) => a + (+x.f[k] || 0), 0);
+  const tot = { comissao: soma('comissao'), gastos: soma('gastosMotorista'), ficou: soma('comMotorista'), adiant: soma('adiantamento'), saldo: soma('saldo') };
+  const pend = fs.reduce((a, x) => a + x.its.filter((l) => !l.x.conferido).length, 0);
+  const ids = vs.map((v) => v.id).join(',');
+  const l = (sinal, txt, val, cls = '') => `<div class="l ${cls}"><span class="sinal">${sinal}</span><span>${txt}</span><b>${money(val)}</b></div>`;
+  const devolve = tot.saldo > 0.004, paga = tot.saldo < -0.004;
+  return A.tela('Acerto conjunto', `
+    <div class="vg-topo"><div class="rota">Acerto de ${esc(mo?.nome || '')}</div><div class="linha"><span class="pill chegou">${vs.length} viagens</span><span>${dateShort(vs[0].dataSaida)} a ${dateShort(vs[vs.length - 1].dataChegada || vs[vs.length - 1].dataSaida)}</span></div></div>
+    <div class="vg-acerto"><div class="res"><small>Resultado das ${vs.length} viagens</small><b>${devolve ? 'Motorista devolve ' + money(tot.saldo) : paga ? 'Empresa paga ' + money(-tot.saldo) : 'Acerto zerado'}</b></div>
+      <div class="conta">${l('+', 'Comissões', tot.comissao)}${l('+', 'Ele pagou na estrada', tot.gastos)}${l('−', 'Frete que ficou com ele', tot.ficou)}${l('−', 'Adiantamentos', tot.adiant)}
+        ${l('=', devolve ? 'Motorista devolve' : 'A pagar ao motorista', Math.abs(tot.saldo), 'fim')}</div></div>
+    <div class="card pad-0 mt"><div class="list" style="padding:0 16px">${fs.map(({ v, f }) => `<a class="li" href="#/viagem/${v.id}?t=acerto"><div class="grow"><div class="t"><b>${esc(v.origem)} → ${esc(v.destino)}</b></div><div class="s">#${v.numero || ''} · ${dateShort(v.dataSaida)} a ${dateShort(v.dataChegada)} · frete ${money0(f.frete)} · comissão ${money0(f.comissao)}</div></div>
+      <div class="r num small"><b>${f.saldo > 0.004 ? 'devolve ' + money0(f.saldo) : f.saldo < -0.004 ? 'receber ' + money0(-f.saldo) : 'zerado'}</b></div></a>`).join('')}</div></div>
+    ${pend ? `<div class="aviso mt">${icon('alert')}<span>${plural(pend, 'lançamento ainda não conferido', 'lançamentos ainda não conferidos')}: ao fechar, ${pend === 1 ? 'fica conferido' : 'ficam conferidos'}.</span></div>` : ''}
+    <button class="btn block vg-fechar mt" data-act="fecharConjunto" data-ids="${ids}">${icon('check')} Fechar as ${vs.length} viagens</button>
+    <button class="btn ghost block mt-s" data-act="pdfConjunto" data-ids="${ids}">${icon('download')} Relatório</button>`, { back: true });
 }
 
 // ---------- Despesas (combustível é uma das categorias) ----------
