@@ -673,31 +673,34 @@ function vConferir() {
   const comPend = new Set(pendentes.map((x) => (colDe(x) === 'viagens' ? x.id : x.viagemId)).filter(Boolean));
   const viagens = sortBy(s.viagens.filter((v) => !v.fechadoEm && (v.status === 'concluida' || comPend.has(v.id))), (v) => (v.status === 'concluida' ? '1' : '0') + (v.dataChegada || v.dataSaida), true);
   const soltos = pendentes.filter((x) => colDe(x) !== 'viagens' && !x.viagemId);
-  const desc = (col, x) => col === 'abastecimentos' ? `Combustível · ${(+x.litros || 0).toLocaleString('pt-BR')} l${x.km ? ' · ' + int(x.km) + ' km' : ''}${x.posto ? ' · ' + esc(x.posto) : ''}` : col === 'recebimentos' ? `Receita · ${esc(D.nomeForma(x.forma))} · ficou com ${x.com === 'motorista' ? 'o motorista' : 'a empresa'}` : `${esc(D.nomeCategoria(x.categoria))}${x.descricao ? ' · ' + esc(x.descricao) : ''}`;
+  const desc = (col, x) => col === 'abastecimentos' ? `Combustível${+x.litros ? ' · ' + (+x.litros).toLocaleString('pt-BR') + ' l' : ''}` : col === 'recebimentos' ? esc(D.nomeForma(x.forma)) : esc(D.nomeCategoria(x.categoria)) + (x.descricao ? ' · ' + esc(x.descricao) : '');
+  const quem = (col, x) => col === 'recebimentos' ? (x.com === 'motorista' ? 'ficou com o motorista' : 'empresa') : D.PAGO_POR[D.pagoPor(x)];
   const act = { abastecimentos: 'editarAbast', despesas: 'editarDespesa', recebimentos: 'editarReceita' };
-  const linha = ({ col, x }) => `<div class="li"><button class="check ${x.conferido ? 'on' : ''}" data-act="conferir" data-ref="${col}:${x.id}" aria-label="${x.conferido ? 'Conferido' : 'Conferir'}" title="${x.conferido ? 'Conferido (clique para desmarcar)' : 'Clique para conferir'}">${icon('check')}</button>
-      <div class="grow click" data-act="${act[col]}" data-id="${x.id}"><div class="t small">${desc(col, x)}</div><div class="s">${dateShort(x.data)}${col !== 'recebimentos' ? (x.pagoPeloMotorista ? ' · <b>pago pelo motorista</b>' : ' · ' + D.PAGO_POR[D.pagoPor(x)]) : ''}${x.motoristaId && !x.conferido ? ' · lançado pelo motorista' : ''}</div></div>
-      <b class="num ${col === 'recebimentos' ? 'up' : ''}">${money(x.valor)}</b></div>`;
+  // uma linha por lançamento: ✓ grande à esquerda, o que é e o valor
+  const linha = ({ col, x }) => `<div class="cf-item ${x.conferido ? 'ok' : ''}"><button class="check ${x.conferido ? 'on' : ''}" data-act="conferir" data-ref="${col}:${x.id}" aria-label="${x.conferido ? 'Desmarcar' : 'Conferir'}">${icon('check')}</button>
+      <div class="grow click" data-act="${act[col]}" data-id="${x.id}"><div class="t">${desc(col, x)}</div><div class="s">${dateShort(x.data)} · ${quem(col, x)}</div></div>
+      <b class="num ${col === 'recebimentos' ? 'up' : ''}">${col === 'recebimentos' ? '+' : ''}${money(x.valor)}</b></div>`;
+  const acertoCurto = (f) => (f.saldo > 0.004 ? `devolve ${money0(f.saldo)}` : f.saldo < -0.004 ? `receber ${money0(-f.saldo)}` : 'acerto zerado');
   const grupo = (v) => {
     const its = sortBy(D.lancamentosDa(s, v.id), (l) => (l.col === 'recebimentos' ? '0' : '1') + l.x.data);
     const ok = its.filter((l) => l.x.conferido).length, tudo = ok === its.length;
     const mo = D.motorista(s, v.motoristaId), ve = D.veiculo(s, v.veiculoId), f = D.fechamento(s, v);
     const podeFechar = tudo && v.status === 'concluida';
-    return `<div class="card pad-0 grupo ${gruposAbertos.has(v.id) || viagens.length === 1 ? 'aberto' : ''}">
-      <div class="grupo-cab click" data-act="grupo" data-id="${v.id}"><span class="grupo-seta">▸</span>
-        <div class="grow"><div class="t"><b>#${v.numero || ''} ${esc(v.origem)} → ${esc(v.destino)}</b> ${badge(D.STATUS_VIAGEM[v.status]?.label || '', D.STATUS_VIAGEM[v.status]?.tom)}</div>
-        <div class="s small muted">${esc(mo?.nome || '—')} · ${esc(ve?.placa || '—')} · ${dateShort(v.dataSaida)}${v.dataChegada ? ' a ' + dateShort(v.dataChegada) : ''} · frete ${money0(f.frete)}</div></div>
-        <div class="r"><div class="small ${tudo ? 'up' : ''}"><b>${ok} de ${its.length}</b> conferidos</div><div class="tiny muted">${esc(quemDeveTxt(f))}</div></div></div>
-      <div class="itens"><div class="list">${its.map(linha).join('') || '<div class="small muted" style="padding:12px 0">Nenhum lançamento nesta viagem.</div>'}</div>
-        <div class="row between gap-s wrap" style="padding:12px 0 14px"><div class="row gap-s">${its.length && !tudo ? `<button class="btn ghost sm" data-act="conferirGrupo" data-id="${v.id}">${icon('check')} Marcar todos</button>` : ''}<button class="btn ghost sm" data-act="abrirViagem" data-id="${v.id}">Abrir viagem</button></div>
-          ${podeFechar ? `<button class="btn" data-act="fecharViagem" data-id="${v.id}">${icon('check')} Fechar viagem e gerar relatório</button>` : `<span class="small muted">${v.status !== 'concluida' ? 'Viagem em andamento: feche depois da chegada' : 'Confira todos os lançamentos para fechar'}</span>`}</div></div></div>`;
+    return `<div class="card pad-0 grupo cf ${gruposAbertos.has(v.id) || viagens.length === 1 ? 'aberto' : ''}">
+      <div class="cf-cab click" data-act="grupo" data-id="${v.id}">
+        <div class="grow"><div class="t"><b>${esc(v.origem)} → ${esc(v.destino)}</b></div>
+          <div class="s">${esc((mo?.nome || '—').split(' ')[0])} · ${esc(ve?.placa || '—')} · ${dateShort(v.dataChegada || v.dataSaida)}${v.status !== 'concluida' ? ' · <b class="em-viagem">em viagem</b>' : ''}</div></div>
+        <div class="r"><span class="cf-cont ${tudo ? 'tudo' : ''}">${icon('check')} ${ok}/${its.length}</span><div class="s">${acertoCurto(f)}</div></div></div>
+      <div class="itens">${its.map(linha).join('') || '<div class="small muted" style="padding:12px 0">Nenhum lançamento.</div>'}
+        <div class="cf-acoes">${podeFechar ? `<button class="btn block" data-act="fecharViagem" data-id="${v.id}">${icon('check')} Fechar viagem</button>`
+          : its.length && !tudo ? `<button class="btn ghost block" data-act="conferirGrupo" data-id="${v.id}">${icon('check')} Marcar todos</button>` : ''}
+          <a class="btn ghost block" href="#/viagem/${v.id}">Abrir viagem</a></div></div></div>`;
   };
-  return A.tela('Conferir', `${A.pageHead('Conferir e fechar', '',
-      `<button class="btn ghost sm" data-act="expandirTudo">Expandir tudo</button><button class="btn ghost sm" data-act="recolherTudo">Recolher tudo</button>`)}
-    <div class="col" style="gap:12px">${viagens.map(grupo).join('')}
-    ${soltos.length ? `<div class="card pad-0 grupo ${gruposAbertos.has('') ? 'aberto' : ''}"><div class="grupo-cab click" data-act="grupo" data-id=""><span class="grupo-seta">▸</span><div class="grow"><b>Lançamentos sem viagem</b><div class="s small muted">${plural(soltos.length, 'item', 'itens')} para conferir</div></div></div>
-      <div class="itens"><div class="list">${soltos.map((x) => linha({ col: colDe(x), x })).join('')}</div><div style="padding:10px 0 14px"><button class="btn ghost sm" data-act="conferirGrupo" data-id="">${icon('check')} Marcar todos</button></div></div></div>` : ''}
-    ${viagens.length || soltos.length ? '' : `<div class="card">${empty('Nada para conferir. Todas as viagens estão fechadas. 👍', 'check')}</div>`}</div>`);
+  return A.tela('Conferir', `${A.pageHead('Conferir', '')}
+    <div class="col" style="gap:10px">${viagens.map(grupo).join('')}
+    ${soltos.length ? `<div class="card pad-0 grupo cf ${gruposAbertos.has('') ? 'aberto' : ''}"><div class="cf-cab click" data-act="grupo" data-id=""><div class="grow"><div class="t"><b>Sem viagem</b></div></div><div class="r"><span class="cf-cont">${icon('check')} 0/${soltos.length}</span></div></div>
+      <div class="itens">${soltos.map((x) => linha({ col: colDe(x), x })).join('')}<div class="cf-acoes"><button class="btn ghost block" data-act="conferirGrupo" data-id="">${icon('check')} Marcar todos</button></div></div></div>` : ''}
+    ${viagens.length || soltos.length ? '' : `<div class="card">${empty('Tudo conferido.', 'check')}</div>`}</div>`);
 }
 
 // ---------- Despesas (combustível é uma das categorias) ----------
