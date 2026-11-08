@@ -22,3 +22,49 @@
 .check { width: 34px; height: 34px; flex: none; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface, #fff); color: transparent; display: grid; place-items: center; cursor: pointer; }
 .check:hover { border-color: var(--primaria); color: var(--ink-3); }
 .check.on { background: var(--ok, #2E7D4F); border-color: var(--ok, #2E7D4F); color: #fff; }
+
+/* ---------- Telas simples: botões grandes, tipos em quadrados, confirmação verde ---------- */
+.ola { font-family: var(--font-t); font-size: 24px; margin-bottom: 12px; }
+.viagem-atual, .viagem-marcada { border-radius: 18px; padding: 16px 18px; display: flex; flex-direction: column; gap: 3px; margin-bottom: 14px; }
+.viagem-atual { background: var(--primaria-escura); color: #fff; }
+.viagem-atual b, .viagem-marcada b { font-family: var(--font-t); font-weight: 500; font-size: 21px; }
+.viagem-atual > span:last-child { color: #B9D2CA; font-size: 14px; }
+.viagem-marcada { background: var(--surface); border: 2px solid var(--primaria); }
+.viagem-marcada > span:nth-child(3) { color: var(--ink-3); font-size: 14px; margin-bottom: 8px; }
+.viagem-atual .rot, .viagem-marcada .rot { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--destaque); }
+.viagem-marcada .rot { color: var(--primaria); }
+.viagem-marcada .btn { min-height: 52px; font-size: 17px; }
+.grade-grande { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.bt-grande { border: 0; border-radius: 20px; min-height: 120px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; gap: 10px;
+  color: #fff; font: 700 20px var(--font); text-align: left; cursor: pointer; box-shadow: 0 6px 16px rgba(14, 47, 40, .14); position: relative; }
+.bt-grande:active { transform: scale(.97); }
+.bt-grande .ic { width: 46px; height: 46px; border-radius: 14px; background: rgba(255, 255, 255, .2); display: grid; place-items: center; }
+.bt-grande .ic svg { width: 26px; height: 26px; }
+.bt-grande.verde { background: var(--primaria); } .bt-grande.laranja { background: var(--destaque); } .bt-grande.azul { background: var(--s3); } .bt-grande.escuro { background: var(--primaria-escura); }
+.bt-grande.largo { grid-column: 1 / -1; min-height: 84px; flex-direction: row; align-items: center; justify-content: flex-start; gap: 14px; }
+.bt-grande .selo { position: absolute; top: 12px; right: 12px; background: #fff; color: var(--destaque); border-radius: 999px; font-size: 14px; padding: 2px 10px; }
+.tipos-grandes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tipos-grandes .tipo { border: 2px solid var(--line); background: var(--surface); border-radius: 18px; min-height: 104px; padding: 12px 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  font: 700 16px var(--font); color: var(--ink); cursor: pointer; text-align: center; }
+.tipos-grandes .tipo svg { width: 34px; height: 34px; color: var(--primaria); }
+.tipos-grandes .tipo:active { border-color: var(--destaque); background: var(--destaque-claro); }
+.feito { position: fixed; inset: 0; z-index: 200; background: var(--ok, #2E7D4F); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 24px; }
+.feito .ok { width: 96px; height: 96px; border-radius: 50%; background: rgba(255, 255, 255, .2); display: grid; place-items: center; }
+.feito .ok svg { width: 56px; height: 56px; stroke-width: 3; }
+.feito b { font-family: var(--font-t); font-size: 28px; font-weight: 500; }
+.feito span { font-size: 17px; opacity: .92; }
+.feito .desf { margin-top: 14px; background: transparent; border: 2px solid rgba(255, 255, 255, .7); color: #fff; border-radius: 14px; padding: 12px 26px; font: 700 17px var(--font); }
+/* motorista: campos e botões maiores nos formulários */
+.app-motorista .modal .input { font-size: 22px; padding: 14px 16px; min-height: 58px; }
+.app-motorista .modal .money-in span { font-size: 18px; }
+.app-motorista .modal .field > span { font-size: 15px; }
+.app-motorista .modal .mf .btn { min-height: 54px; font-size: 18px; flex: 1; }
+.app-motorista .modal label.row.small { font-size: 16px; gap: 10px; }
+.app-motorista .modal input[type="checkbox"] { width: 22px; height: 22px; }
+.aviso-fechar { display: flex; align-items: center; gap: 12px; background: var(--destaque-claro); border: 1px solid #F3C98A; color: #7A4A00; border-radius: 16px; padding: 12px 16px; font-weight: 700; font-size: 16px; margin-bottom: 14px; }
+.aviso-fechar .n { background: var(--destaque); color: #fff; border-radius: 12px; min-width: 38px; height: 38px; display: grid; place-items: center; font-size: 19px; }
+.aviso-fechar span:nth-child(2) { flex: 1; }
+.atalhos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.atalhos a { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 4px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); text-align: center; }
+.atalhos a svg { color: var(--primaria); }
+@media (min-width: 901px) { .grade-grande { grid-template-columns: repeat(4, 1fr); } .grade-grande .bt-grande.largo { grid-column: span 2; } }
